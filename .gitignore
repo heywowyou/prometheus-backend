@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+
+# Environment variables (Security Risk!)
+.env
+
+# System files
+.DS_Store
