@@ -1,11 +1,13 @@
-// Import the express library
+require("dotenv").config();
+
 const express = require("express");
+const connectDB = require("./config/db");
 
-// Initialize the app
+// Connect to Database
+connectDB();
+
 const app = express();
-
-// Define the port
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Start the server
 app.listen(PORT, () => {
