@@ -62,36 +62,25 @@ const updateTodo = async (req, res) => {
         .json({ message: "Not authorized to modify this task" });
     }
 
-    let taskToReturn = todo; // Default: return the updated existing task
+    // Determine the new status (Toggle it)
+    const newCompletedStatus = !todo.completed;
 
-    if (todo.completed || todo.recurrenceType === "none") {
-      // Path 1: Simple Toggle (Undo completion or non-recurring task)
-      todo.completed = !todo.completed;
-      todo.lastCompletedAt = todo.completed ? new Date() : undefined;
-    } else if (!todo.completed && todo.recurrenceType !== "none") {
-      // Path 2: Completion of a Recurring Task (Clone Path)
+    // Set the completion status and timestamp
+    todo.completed = newCompletedStatus;
 
-      // Mark the current task as completed with a timestamp
-      todo.completed = true;
+    if (todo.completed) {
+      // If toggled ON, record the time (used for frontend reset check)
       todo.lastCompletedAt = new Date();
-
-      // Clone the next instance
-      const todoClone = await Todo.create({
-        userId: todo.userId,
-        text: todo.text,
-        recurrenceType: todo.recurrenceType,
-        // Link the new clone back to the original instance's ID
-        originalTodoId: todo._id,
-      });
-
-      taskToReturn = todoClone;
+    } else {
+      // If toggled OFF, clear the completion date
+      todo.lastCompletedAt = undefined;
     }
 
-    // Save the current (now completed) task to the database
+    // Save the changes
     await todo.save();
 
-    // Send back the correct task (either the simple update, or the newly cloned instance)
-    res.status(200).json(taskToReturn);
+    // Send back the updated task for the frontend to re-render the checked status
+    res.status(200).json(todo);
   } catch (error) {
     console.error(error);
     res
