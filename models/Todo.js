@@ -12,7 +12,10 @@ const TodoSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // Will add the 'user' field later during Clerk integration
+    userId: {
+      type: String,
+      required: true,
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields
