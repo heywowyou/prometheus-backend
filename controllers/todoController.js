@@ -55,18 +55,45 @@ const updateTodo = async (req, res) => {
       return res.status(404).json({ message: "Todo not found" });
     }
 
-    // Ensure the todo belongs to the authenticated user
+    // Security Check
     if (todo.userId !== req.auth.userId) {
       return res
         .status(403)
         .json({ message: "Not authorized to modify this task" });
     }
 
-    todo.completed = !todo.completed;
-    const updatedTodo = await todo.save();
+    let taskToReturn = todo; // Default: return the updated existing task
 
-    res.status(200).json(updatedTodo);
+    if (todo.completed || todo.recurrenceType === "none") {
+      // Path 1: Simple Toggle (Undo completion or non-recurring task)
+      todo.completed = !todo.completed;
+      todo.lastCompletedAt = todo.completed ? new Date() : undefined;
+    } else if (!todo.completed && todo.recurrenceType !== "none") {
+      // Path 2: Completion of a Recurring Task (Clone Path)
+
+      // Mark the current task as completed with a timestamp
+      todo.completed = true;
+      todo.lastCompletedAt = new Date();
+
+      // Clone the next instance
+      const todoClone = await Todo.create({
+        userId: todo.userId,
+        text: todo.text,
+        recurrenceType: todo.recurrenceType,
+        // Link the new clone back to the original instance's ID
+        originalTodoId: todo._id,
+      });
+
+      taskToReturn = todoClone;
+    }
+
+    // Save the current (now completed) task to the database
+    await todo.save();
+
+    // Send back the correct task (either the simple update, or the newly cloned instance)
+    res.status(200).json(taskToReturn);
   } catch (error) {
+    console.error(error);
     res
       .status(500)
       .json({ message: "Error updating todo", error: error.message });
