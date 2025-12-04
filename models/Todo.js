@@ -12,6 +12,25 @@ const TodoSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    recurrenceType: {
+      type: String,
+      // Defines the frequency for task regeneration
+      enum: ["none", "daily", "weekly", "monthly"],
+      default: "none",
+    },
+    // The specific date/time the current task instance was completed
+    lastCompletedAt: {
+      type: Date,
+      required: false,
+    },
+    // The ID of the original task this recurring task was cloned from
+    originalTodoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Todo",
+      required: false,
+    },
+
+    // The unique ID of the user who owns this task (from Clerk)
     userId: {
       type: String,
       required: true,
