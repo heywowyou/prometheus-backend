@@ -20,7 +20,7 @@ const getTodos = async (req, res) => {
 // @access  Private
 const createTodo = async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, recurrenceType } = req.body;
 
     // Check if the authenticated user ID is available
     if (!req.auth || !req.auth.userId) {
@@ -35,6 +35,7 @@ const createTodo = async (req, res) => {
     const todo = await Todo.create({
       text,
       userId: req.auth.userId,
+      recurrenceType: recurrenceType || "none",
     });
     res.status(201).json(todo);
   } catch (error) {
