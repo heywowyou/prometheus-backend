@@ -23,9 +23,8 @@ const TodoSchema = mongoose.Schema(
       type: Date,
       required: false,
     },
-    // Keep track of current and longest streak for the task
-    currentStreak: { type: Number, default: 0 },
-    longestStreak: { type: Number, default: 0 },
+    // Total number of times this task was completed
+    completionCount: { type: Number, default: 0 },
     // The unique ID of the user who owns this task (from Clerk)
     userId: {
       type: String,

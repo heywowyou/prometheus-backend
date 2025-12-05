@@ -1,5 +1,5 @@
 const Todo = require("../models/Todo");
-const TodoHistory = require("../models/TodoHistory");
+const TodoHistory = require("../models/TodoHistory"); // <--- NEW IMPORT
 
 // @desc    Get all scoped todos
 // @route   GET /api/todos
@@ -21,6 +21,7 @@ const getTodos = async (req, res) => {
 // @access  Private
 const createTodo = async (req, res) => {
   try {
+    // Destructure text and recurrenceType from the request body
     const { text, recurrenceType } = req.body;
 
     // Check if the authenticated user ID is available
@@ -32,7 +33,7 @@ const createTodo = async (req, res) => {
       return res.status(400).json({ message: "Please add a text field" });
     }
 
-    // Add the userId to the document before creation
+    // Pass recurrenceType to the database creation
     const todo = await Todo.create({
       text,
       userId: req.auth.userId,
@@ -57,78 +58,36 @@ const updateTodo = async (req, res) => {
       return res.status(404).json({ message: "Todo not found" });
     }
 
+    // Security Check
     if (todo.userId !== req.auth.userId) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Are we turning it ON or OFF?
+    // Are we turning it ON or OFF? (Defines intent)
     const isCompleting = !todo.completed;
 
-    // Completing task
     if (isCompleting) {
+      // SCENARIO 1: COMPLETING TASK (Increment Tally)
       todo.completed = true;
       const now = new Date();
 
-      // Streak Logic for Recurring Tasks
       if (todo.recurrenceType !== "none") {
-        const lastDate = todo.lastCompletedAt
-          ? new Date(todo.lastCompletedAt)
-          : null;
-
-        // Check if last completion was "Yesterday" (Consecutive)
-        // Simple logic: Reset time is midnight. If now < resetTime(lastDate + 2 days), it's consecutive.
-        let isConsecutive = false;
-
-        if (lastDate) {
-          // 1. Normalize Today's date to midnight
-          const todayNormalized = new Date(now);
-          todayNormalized.setHours(0, 0, 0, 0); // Today at 00:00
-
-          // 2. Normalize Last Completed Date to midnight
-          const lastDateNormalized = new Date(lastDate);
-          lastDateNormalized.setHours(0, 0, 0, 0); // Last completion day at 00:00
-
-          // Calculate the difference in full days
-          const diffTime = Math.abs(
-            todayNormalized.getTime() - lastDateNormalized.getTime()
-          );
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Round up for full day difference
-
-          // The task is consecutive if the last completion was today (diffDays=0)
-          // OR if it was yesterday (diffDays=1).
-          // The frontend prevents us from completing the task before the reset, so diffDays > 1 means a gap.
-          if (diffDays <= 1) {
-            isConsecutive = true;
-          }
-        }
-
-        if (isConsecutive) {
-          todo.currentStreak += 1;
-        } else {
-          // Gap detected (or first time), reset to 1
-          todo.currentStreak = 1;
-        }
-
-        // Update Longest Streak
-        if (todo.currentStreak > todo.longestStreak) {
-          todo.longestStreak = todo.currentStreak;
-        }
+        // Increment the total completion tally
+        todo.completionCount += 1;
 
         // Create History Archive
         await TodoHistory.create({
           todoId: todo._id,
           userId: req.auth.userId,
           completedAt: now,
-          streakSnapshot: todo.currentStreak,
+          tallySnapshot: todo.completionCount, // Log the new tally
         });
       }
 
       // Always update the timestamp
       todo.lastCompletedAt = now;
-    }
-
-    // Un-completing task
-    else {
+    } else {
+      // SCENARIO 2: UN-COMPLETING (UNDO)
       todo.completed = false;
 
       if (todo.recurrenceType !== "none") {
@@ -138,29 +97,19 @@ const updateTodo = async (req, res) => {
         }).sort({ completedAt: -1 });
 
         if (latestHistory) {
+          // Decrement the tally to reflect the undo
+          todo.completionCount -= 1;
           await TodoHistory.findByIdAndDelete(latestHistory._id);
         }
+      }
 
-        // Restore state from the *previous* history entry
-        const previousHistory = await TodoHistory.findOne({
-          todoId: todo._id,
-        }).sort({ completedAt: -1 });
-
-        if (previousHistory) {
-          // Revert to previous state
-          todo.currentStreak = previousHistory.streakSnapshot;
-          todo.lastCompletedAt = previousHistory.completedAt;
-        } else {
-          // No history left? Reset to zero.
-          todo.currentStreak = 0;
-          todo.lastCompletedAt = undefined;
-        }
-      } else {
-        // Non-recurring undo
+      // Since the frontend handles the visual reset, we just clear the last completed time on undo
+      if (todo.completionCount === 0 || todo.recurrenceType === "none") {
         todo.lastCompletedAt = undefined;
       }
     }
 
+    // Save the updated state of the task
     await todo.save();
     res.status(200).json(todo);
   } catch (error) {
@@ -189,7 +138,12 @@ const deleteTodo = async (req, res) => {
         .json({ message: "Not authorized to delete this task" });
     }
 
-    // Use deleteOne on the document instance for Mongoose simplicity
+    // Cleanup: Delete all associated history records
+    if (todo.recurrenceType !== "none") {
+      await TodoHistory.deleteMany({ todoId: todo._id });
+    }
+
+    // Delete the main task document
     await todo.deleteOne();
 
     res
