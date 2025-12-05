@@ -23,13 +23,9 @@ const TodoSchema = mongoose.Schema(
       type: Date,
       required: false,
     },
-    // The ID of the original task this recurring task was cloned from
-    originalTodoId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Todo",
-      required: false,
-    },
-
+    // Keep track of current and longest streak for the task
+    currentStreak: { type: Number, default: 0 },
+    longestStreak: { type: Number, default: 0 },
     // The unique ID of the user who owns this task (from Clerk)
     userId: {
       type: String,
