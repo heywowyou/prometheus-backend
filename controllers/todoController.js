@@ -1,12 +1,28 @@
 const Todo = require("../models/Todo");
-const TodoHistory = require("../models/TodoHistory"); // <--- NEW IMPORT
+const TodoHistory = require("../models/TodoHistory");
+
+// HELPER: Determine Reset Time (Matches Frontend Logic)
+const getNextResetTime = (lastCompletedAt, type) => {
+  if (!lastCompletedAt) return new Date(0);
+
+  const date = new Date(lastCompletedAt);
+
+  if (type === "daily") {
+    // Set to midnight of the NEXT day
+    date.setDate(date.getDate() + 1);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  // Default for future types
+  return new Date(Date.now() + 3153600000000);
+};
 
 // @desc    Get all scoped todos
 // @route   GET /api/todos
 // @access  Private
 const getTodos = async (req, res) => {
   try {
-    // Find only todos where the userId matches the authenticated user's ID
     const todos = await Todo.find({ userId: req.auth.userId });
     res.status(200).json(todos);
   } catch (error) {
@@ -21,19 +37,15 @@ const getTodos = async (req, res) => {
 // @access  Private
 const createTodo = async (req, res) => {
   try {
-    // Destructure text and recurrenceType from the request body
     const { text, recurrenceType } = req.body;
 
-    // Check if the authenticated user ID is available
     if (!req.auth || !req.auth.userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
-
     if (!text) {
       return res.status(400).json({ message: "Please add a text field" });
     }
 
-    // Pass recurrenceType to the database creation
     const todo = await Todo.create({
       text,
       userId: req.auth.userId,
@@ -57,59 +69,64 @@ const updateTodo = async (req, res) => {
     if (!todo) {
       return res.status(404).json({ message: "Todo not found" });
     }
-
-    // Security Check
     if (todo.userId !== req.auth.userId) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Are we turning it ON or OFF? (Defines intent)
-    const isCompleting = !todo.completed;
+    // 1. Determine the intent. Default is a simple toggle.
+    let isCompleting = !todo.completed;
+    const now = new Date();
+
+    // 2. RECURRENCE CHECK: If the task is already completed, but it's RECURRING,
+    //    we must check if it's "stale" (past the reset time).
+    //    If so, the user intends to COMPLETE IT AGAIN, not undo it.
+    if (todo.completed && todo.recurrenceType !== "none") {
+      const resetTime = getNextResetTime(
+        todo.lastCompletedAt,
+        todo.recurrenceType
+      );
+
+      if (now >= resetTime) {
+        isCompleting = true;
+      }
+    }
 
     if (isCompleting) {
-      // SCENARIO 1: COMPLETING TASK (Increment Tally)
+      // SCENARIO 1: COMPLETING TASK
       todo.completed = true;
-      const now = new Date();
 
       if (todo.recurrenceType !== "none") {
-        // Increment the total completion tally
         todo.completionCount += 1;
 
-        // Create History Archive
         await TodoHistory.create({
           todoId: todo._id,
           userId: req.auth.userId,
           completedAt: now,
-          tallySnapshot: todo.completionCount, // Log the new tally
+          tallySnapshot: todo.completionCount,
         });
       }
 
-      // Always update the timestamp
       todo.lastCompletedAt = now;
     } else {
       // SCENARIO 2: UN-COMPLETING (UNDO)
       todo.completed = false;
 
       if (todo.recurrenceType !== "none") {
-        // Find the most recent history entry to delete it
         const latestHistory = await TodoHistory.findOne({
           todoId: todo._id,
         }).sort({ completedAt: -1 });
 
         if (latestHistory) {
-          // Decrement the tally to reflect the undo
           todo.completionCount -= 1;
           await TodoHistory.findByIdAndDelete(latestHistory._id);
         }
       }
 
-      // Since the frontend handles the visual reset, we just clear the last completed time on undo
       if (todo.completionCount === 0 || todo.recurrenceType === "none") {
         todo.lastCompletedAt = undefined;
       }
     }
 
-    // Save the updated state of the task
     await todo.save();
     res.status(200).json(todo);
   } catch (error) {
@@ -130,22 +147,17 @@ const deleteTodo = async (req, res) => {
     if (!todo) {
       return res.status(404).json({ message: "Todo not found" });
     }
-
-    // Ensure the todo belongs to the authenticated user
     if (todo.userId !== req.auth.userId) {
       return res
         .status(403)
         .json({ message: "Not authorized to delete this task" });
     }
 
-    // Cleanup: Delete all associated history records
     if (todo.recurrenceType !== "none") {
       await TodoHistory.deleteMany({ todoId: todo._id });
     }
 
-    // Delete the main task document
     await todo.deleteOne();
-
     res
       .status(200)
       .json({ id: req.params.id, message: "Todo successfully deleted" });
