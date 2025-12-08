@@ -1,21 +1,30 @@
 const Todo = require("../models/Todo");
 const TodoHistory = require("../models/TodoHistory");
 
-// HELPER: Determine Reset Time (Matches Frontend Logic)
+// HELPER: Determine Reset Time
 const getNextResetTime = (lastCompletedAt, type) => {
-  if (!lastCompletedAt) return new Date(0);
+  if (!lastCompletedAt) return new Date(0); // Always active if never done
 
   const date = new Date(lastCompletedAt);
 
+  // 1. Daily: Reset at midnight of the NEXT day
   if (type === "daily") {
-    // Set to midnight of the NEXT day
     date.setDate(date.getDate() + 1);
-    date.setHours(0, 0, 0, 0);
-    return date;
   }
 
-  // Default for future types
-  return new Date(Date.now() + 3153600000000);
+  // 2. Weekly: Reset at midnight 7 days later
+  else if (type === "weekly") {
+    date.setDate(date.getDate() + 7);
+  }
+
+  // 3. Monthly: Reset at midnight 1 month later
+  else if (type === "monthly") {
+    date.setMonth(date.getMonth() + 1);
+  }
+
+  // Normalize to Midnight (00:00:00)
+  date.setHours(0, 0, 0, 0);
+  return date;
 };
 
 // @desc    Get all scoped todos
@@ -77,9 +86,7 @@ const updateTodo = async (req, res) => {
     let isCompleting = !todo.completed;
     const now = new Date();
 
-    // 2. RECURRENCE CHECK: If the task is already completed, but it's RECURRING,
-    //    we must check if it's "stale" (past the reset time).
-    //    If so, the user intends to COMPLETE IT AGAIN, not undo it.
+    // 2. Recurrence check
     if (todo.completed && todo.recurrenceType !== "none") {
       const resetTime = getNextResetTime(
         todo.lastCompletedAt,
@@ -92,7 +99,7 @@ const updateTodo = async (req, res) => {
     }
 
     if (isCompleting) {
-      // SCENARIO 1: COMPLETING TASK
+      // Completing task
       todo.completed = true;
 
       if (todo.recurrenceType !== "none") {
@@ -108,7 +115,7 @@ const updateTodo = async (req, res) => {
 
       todo.lastCompletedAt = now;
     } else {
-      // SCENARIO 2: UN-COMPLETING (UNDO)
+      // Un-completing task
       todo.completed = false;
 
       if (todo.recurrenceType !== "none") {
