@@ -12,14 +12,23 @@ const getNextResetTime = (lastCompletedAt, type) => {
     date.setDate(date.getDate() + 1);
   }
 
-  // 2. Weekly: Reset at midnight 7 days later
+  // 2. Weekly: Reset at midnight of the NEXT Monday
   else if (type === "weekly") {
-    date.setDate(date.getDate() + 7);
+    const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    let daysUntilNextMonday = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7; // If Monday (1), go 7 days. Otherwise, calculate days to next Monday.
+
+    // If the task was completed today (Monday), the reset is next Monday (7 days later).
+    if (daysUntilNextMonday === 0) {
+      daysUntilNextMonday = 7;
+    }
+
+    date.setDate(date.getDate() + daysUntilNextMonday);
   }
 
-  // 3. Monthly: Reset at midnight 1 month later
+  // 3. Monthly: Reset at midnight of the 1st day of the NEXT month
   else if (type === "monthly") {
     date.setMonth(date.getMonth() + 1);
+    date.setDate(1); // Set to the 1st of the new month
   }
 
   // Normalize to Midnight (00:00:00)
