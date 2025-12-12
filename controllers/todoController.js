@@ -3,7 +3,7 @@ const TodoHistory = require("../models/TodoHistory");
 
 // HELPER: Determine Reset Time
 const getNextResetTime = (lastCompletedAt, type) => {
-  if (!lastCompletedAt) return new Date(0); // Always active if never done
+  if (!lastCompletedAt) return new Date(0);
 
   const date = new Date(lastCompletedAt);
 
@@ -11,27 +11,19 @@ const getNextResetTime = (lastCompletedAt, type) => {
   if (type === "daily") {
     date.setDate(date.getDate() + 1);
   }
-
   // 2. Weekly: Reset at midnight of the NEXT Monday
   else if (type === "weekly") {
-    const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-    let daysUntilNextMonday = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7; // If Monday (1), go 7 days. Otherwise, calculate days to next Monday.
-
-    // If the task was completed today (Monday), the reset is next Monday (7 days later).
-    if (daysUntilNextMonday === 0) {
-      daysUntilNextMonday = 7;
-    }
-
+    const dayOfWeek = date.getDay();
+    let daysUntilNextMonday = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7;
+    if (daysUntilNextMonday === 0) daysUntilNextMonday = 7;
     date.setDate(date.getDate() + daysUntilNextMonday);
   }
-
   // 3. Monthly: Reset at midnight of the 1st day of the NEXT month
   else if (type === "monthly") {
     date.setMonth(date.getMonth() + 1);
-    date.setDate(1); // Set to the 1st of the new month
+    date.setDate(1);
   }
 
-  // Normalize to Midnight (00:00:00)
   date.setHours(0, 0, 0, 0);
   return date;
 };
@@ -55,7 +47,8 @@ const getTodos = async (req, res) => {
 // @access  Private
 const createTodo = async (req, res) => {
   try {
-    const { text, recurrenceType } = req.body;
+    // We now accept interactionType and durationGoal from the body
+    const { text, recurrenceType, interactionType, durationGoal } = req.body;
 
     if (!req.auth || !req.auth.userId) {
       return res.status(401).json({ message: "User not authenticated" });
@@ -68,6 +61,8 @@ const createTodo = async (req, res) => {
       text,
       userId: req.auth.userId,
       recurrenceType: recurrenceType || "none",
+      interactionType: interactionType || "checkbox",
+      durationGoal: durationGoal || 0,
     });
     res.status(201).json(todo);
   } catch (error) {
@@ -77,7 +72,7 @@ const createTodo = async (req, res) => {
   }
 };
 
-// @desc    Update a scoped todo
+// @desc    Update a scoped todo (Handles Edits AND Completions)
 // @route   PUT /api/todos/:id
 // @access  Private
 const updateTodo = async (req, res) => {
@@ -91,55 +86,80 @@ const updateTodo = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // 1. Determine the intent. Default is a simple toggle.
-    let isCompleting = !todo.completed;
-    const now = new Date();
+    // --- 1. HANDLE CONTENT EDITS ---
+    // Extract editable fields from the request body
+    const { text, recurrenceType, interactionType, durationGoal } = req.body;
 
-    // 2. Recurrence check
-    if (todo.completed && todo.recurrenceType !== "none") {
-      const resetTime = getNextResetTime(
-        todo.lastCompletedAt,
-        todo.recurrenceType
-      );
+    // Update fields if they are provided
+    if (text) todo.text = text;
+    if (recurrenceType) todo.recurrenceType = recurrenceType;
+    if (interactionType) todo.interactionType = interactionType;
+    if (durationGoal !== undefined) todo.durationGoal = durationGoal;
 
-      if (now >= resetTime) {
-        isCompleting = true;
-      }
+    // --- 2. DETERMINE IF STATUS IS CHANGING ---
+    // We check if this request intends to toggle completion.
+    // Legacy/Frontend Behavior: Sending an empty body {} means "Toggle Status".
+    // Explicit Behavior: Sending { completed: true/false } means "Set Status".
+    // Edit Behavior: Sending { text: "..." } WITHOUT 'completed' means "Do Not Change Status".
+
+    let shouldUpdateStatus = false;
+    let targetStatus = null;
+
+    if (Object.keys(req.body).length === 0) {
+      // Empty body = Toggle (Legacy support)
+      shouldUpdateStatus = true;
+      targetStatus = !todo.completed;
+    } else if (req.body.hasOwnProperty("completed")) {
+      // Explicit status change
+      shouldUpdateStatus = true;
+      targetStatus = req.body.completed;
     }
 
-    if (isCompleting) {
-      // Completing task
-      todo.completed = true;
+    // Only run completion logic if we are actually changing status
+    if (shouldUpdateStatus) {
+      let isCompleting = targetStatus;
+      const now = new Date();
 
-      if (todo.recurrenceType !== "none") {
-        todo.completionCount += 1;
-
-        await TodoHistory.create({
-          todoId: todo._id,
-          userId: req.auth.userId,
-          completedAt: now,
-          tallySnapshot: todo.completionCount,
-        });
-      }
-
-      todo.lastCompletedAt = now;
-    } else {
-      // Un-completing task
-      todo.completed = false;
-
-      if (todo.recurrenceType !== "none") {
-        const latestHistory = await TodoHistory.findOne({
-          todoId: todo._id,
-        }).sort({ completedAt: -1 });
-
-        if (latestHistory) {
-          todo.completionCount -= 1;
-          await TodoHistory.findByIdAndDelete(latestHistory._id);
+      // RECURRENCE CHECK: Force completion if it's a recurring task reset
+      if (todo.completed && todo.recurrenceType !== "none") {
+        const resetTime = getNextResetTime(
+          todo.lastCompletedAt,
+          todo.recurrenceType
+        );
+        if (now >= resetTime) {
+          isCompleting = true; // Force it to "Complete Next Cycle"
         }
       }
 
-      if (todo.completionCount === 0 || todo.recurrenceType === "none") {
-        todo.lastCompletedAt = undefined;
+      if (isCompleting) {
+        // SCENARIO 1: COMPLETING
+        todo.completed = true;
+        if (todo.recurrenceType !== "none") {
+          todo.completionCount += 1;
+          await TodoHistory.create({
+            todoId: todo._id,
+            userId: req.auth.userId,
+            completedAt: now,
+            tallySnapshot: todo.completionCount,
+          });
+        }
+        todo.lastCompletedAt = now;
+      } else {
+        // SCENARIO 2: UNDO
+        todo.completed = false;
+        if (todo.recurrenceType !== "none") {
+          const latestHistory = await TodoHistory.findOne({
+            todoId: todo._id,
+          }).sort({ completedAt: -1 });
+
+          if (latestHistory) {
+            todo.completionCount -= 1;
+            await TodoHistory.findByIdAndDelete(latestHistory._id);
+          }
+        }
+        if (todo.completionCount === 0 || todo.recurrenceType === "none") {
+          todo.lastCompletedAt = undefined;
+        }
       }
     }
 
