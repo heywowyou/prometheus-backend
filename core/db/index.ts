@@ -5,6 +5,7 @@ const connectDB = async (): Promise<void> => {
     const mongoUri = process.env.MONGODB_URI;
 
     if (!mongoUri) {
+      console.error("MONGODB_URI is not set in this environment");
       throw new Error("MONGODB_URI environment variable is not set");
     }
 
