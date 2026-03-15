@@ -1,25 +1,19 @@
-const Todo = require("../models/Todo");
-const TodoHistory = require("../models/TodoHistory");
+const Todo = require("./todo.model");
+const TodoHistory = require("./todo-history.model");
 
-// HELPER: Determine Reset Time
 const getNextResetTime = (lastCompletedAt, type) => {
   if (!lastCompletedAt) return new Date(0);
 
   const date = new Date(lastCompletedAt);
 
-  // 1. Daily: Reset at midnight of the NEXT day
   if (type === "daily") {
     date.setDate(date.getDate() + 1);
-  }
-  // 2. Weekly: Reset at midnight of the NEXT Monday
-  else if (type === "weekly") {
+  } else if (type === "weekly") {
     const dayOfWeek = date.getDay();
     let daysUntilNextMonday = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7;
     if (daysUntilNextMonday === 0) daysUntilNextMonday = 7;
     date.setDate(date.getDate() + daysUntilNextMonday);
-  }
-  // 3. Monthly: Reset at midnight of the 1st day of the NEXT month
-  else if (type === "monthly") {
+  } else if (type === "monthly") {
     date.setMonth(date.getMonth() + 1);
     date.setDate(1);
   }
@@ -28,9 +22,6 @@ const getNextResetTime = (lastCompletedAt, type) => {
   return date;
 };
 
-// @desc    Get all scoped todos
-// @route   GET /api/todos
-// @access  Private
 const getTodos = async (req, res) => {
   try {
     const todos = await Todo.find({ userId: req.auth.userId });
@@ -42,12 +33,8 @@ const getTodos = async (req, res) => {
   }
 };
 
-// @desc    Create a new scoped todo
-// @route   POST /api/todos
-// @access  Private
 const createTodo = async (req, res) => {
   try {
-    // We now accept interactionType and durationGoal from the body
     const { text, recurrenceType, interactionType, durationGoal } = req.body;
 
     if (!req.auth || !req.auth.userId) {
@@ -72,9 +59,6 @@ const createTodo = async (req, res) => {
   }
 };
 
-// @desc    Update a scoped todo (Handles Edits AND Completions)
-// @route   PUT /api/todos/:id
-// @access  Private
 const updateTodo = async (req, res) => {
   try {
     const todo = await Todo.findById(req.params.id);
@@ -86,53 +70,39 @@ const updateTodo = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // --- 1. HANDLE CONTENT EDITS ---
-    // Extract editable fields from the request body
     const { text, recurrenceType, interactionType, durationGoal } = req.body;
 
-    // Update fields if they are provided
     if (text) todo.text = text;
     if (recurrenceType) todo.recurrenceType = recurrenceType;
     if (interactionType) todo.interactionType = interactionType;
     if (durationGoal !== undefined) todo.durationGoal = durationGoal;
 
-    // --- 2. DETERMINE IF STATUS IS CHANGING ---
-    // We check if this request intends to toggle completion.
-    // Legacy/Frontend Behavior: Sending an empty body {} means "Toggle Status".
-    // Explicit Behavior: Sending { completed: true/false } means "Set Status".
-    // Edit Behavior: Sending { text: "..." } WITHOUT 'completed' means "Do Not Change Status".
-
     let shouldUpdateStatus = false;
     let targetStatus = null;
 
     if (Object.keys(req.body).length === 0) {
-      // Empty body = Toggle (Legacy support)
       shouldUpdateStatus = true;
       targetStatus = !todo.completed;
-    } else if (req.body.hasOwnProperty("completed")) {
-      // Explicit status change
+    } else if (Object.prototype.hasOwnProperty.call(req.body, "completed")) {
       shouldUpdateStatus = true;
       targetStatus = req.body.completed;
     }
 
-    // Only run completion logic if we are actually changing status
     if (shouldUpdateStatus) {
       let isCompleting = targetStatus;
       const now = new Date();
 
-      // RECURRENCE CHECK: Force completion if it's a recurring task reset
       if (todo.completed && todo.recurrenceType !== "none") {
         const resetTime = getNextResetTime(
           todo.lastCompletedAt,
           todo.recurrenceType
         );
         if (now >= resetTime) {
-          isCompleting = true; // Force it to "Complete Next Cycle"
+          isCompleting = true;
         }
       }
 
       if (isCompleting) {
-        // SCENARIO 1: COMPLETING
         todo.completed = true;
         if (todo.recurrenceType !== "none") {
           todo.completionCount += 1;
@@ -145,7 +115,6 @@ const updateTodo = async (req, res) => {
         }
         todo.lastCompletedAt = now;
       } else {
-        // SCENARIO 2: UNDO
         todo.completed = false;
         if (todo.recurrenceType !== "none") {
           const latestHistory = await TodoHistory.findOne({
@@ -173,9 +142,6 @@ const updateTodo = async (req, res) => {
   }
 };
 
-// @desc    Delete a scoped todo
-// @route   DELETE /api/todos/:id
-// @access  Private
 const deleteTodo = async (req, res) => {
   try {
     const todo = await Todo.findById(req.params.id);
@@ -210,3 +176,4 @@ module.exports = {
   updateTodo,
   deleteTodo,
 };
+
