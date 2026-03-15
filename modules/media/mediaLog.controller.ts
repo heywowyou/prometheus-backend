@@ -33,12 +33,32 @@ export const createMediaLog = async (
   res: Response
 ) => {
   try {
-    const { type, title, url, cover, rating } = req.body as {
+    const {
+      type,
+      title,
+      url,
+      cover,
+      rating,
+      review,
+      date,
+      status,
+      director,
+      author,
+      pages,
+      artist,
+    } = req.body as {
       type?: MediaLogType;
       title?: string;
       url?: string;
       cover?: string;
       rating?: number;
+      review?: string;
+      date?: string | Date;
+      status?: "finished" | "in_progress";
+      director?: string;
+      author?: string;
+      pages?: number;
+      artist?: string;
     };
 
     const userId = getUserId(req);
@@ -49,6 +69,12 @@ export const createMediaLog = async (
       return res
         .status(400)
         .json({ message: "type and title are required" });
+    }
+
+    const parsedDate =
+      date != null ? new Date(date) : new Date();
+    if (Number.isNaN(parsedDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date" });
     }
 
     const numRating =
@@ -65,6 +91,13 @@ export const createMediaLog = async (
       url: url ?? undefined,
       cover: cover ?? undefined,
       rating: numRating,
+      review: review ?? undefined,
+      date: parsedDate,
+      status: status ?? "finished",
+      director: type === "movie" ? director ?? undefined : undefined,
+      author: type === "book" ? author ?? undefined : undefined,
+      pages: type === "book" ? pages ?? undefined : undefined,
+      artist: type === "music_album" ? artist ?? undefined : undefined,
       userId,
     });
     return res.status(201).json(log);
@@ -91,12 +124,32 @@ export const updateMediaLog = async (
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    const { type, title, url, cover, rating } = req.body as {
+    const {
+      type,
+      title,
+      url,
+      cover,
+      rating,
+      review,
+      date,
+      status,
+      director,
+      author,
+      pages,
+      artist,
+    } = req.body as {
       type?: MediaLogType;
       title?: string;
       url?: string;
       cover?: string;
       rating?: number;
+      review?: string;
+      date?: string | Date;
+      status?: "finished" | "in_progress";
+      director?: string;
+      author?: string;
+      pages?: number;
+      artist?: string;
     };
 
     if (type != null) log.type = type;
@@ -112,6 +165,40 @@ export const updateMediaLog = async (
           .json({ message: "rating must be a number between 1 and 10" });
       }
       log.rating = numRating;
+    }
+
+    if (review !== undefined) {
+      log.review = review || undefined;
+    }
+
+    if (date !== undefined) {
+      const parsedDate = new Date(date);
+      if (Number.isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: "Invalid date" });
+      }
+      log.date = parsedDate;
+    }
+
+    if (status !== undefined) {
+      if (status !== "finished" && status !== "in_progress") {
+        return res
+          .status(400)
+          .json({ message: "status must be finished or in_progress" });
+      }
+      log.status = status;
+    }
+
+    if (director !== undefined) {
+      log.director = director || undefined;
+    }
+    if (author !== undefined) {
+      log.author = author || undefined;
+    }
+    if (pages !== undefined) {
+      log.pages = pages;
+    }
+    if (artist !== undefined) {
+      log.artist = artist || undefined;
     }
 
     await log.save();

@@ -20,6 +20,35 @@ const MediaLogSchema = new mongoose_1.Schema({
         min: [1, "Rating must be at least 1"],
         max: [10, "Rating must be at most 10"],
     },
+    review: {
+        type: String,
+        trim: true,
+    },
+    date: {
+        type: Date,
+        required: true,
+    },
+    status: {
+        type: String,
+        enum: ["finished", "in_progress"],
+        default: "finished",
+    },
+    director: {
+        type: String,
+        trim: true,
+    },
+    author: {
+        type: String,
+        trim: true,
+    },
+    pages: {
+        type: Number,
+        min: 1,
+    },
+    artist: {
+        type: String,
+        trim: true,
+    },
     userId: {
         type: String,
         required: true,
