@@ -8,6 +8,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const db_1 = __importDefault(require("./core/db"));
 const todos_1 = require("./modules/todos");
+const media_1 = require("./modules/media");
 dotenv_1.default.config();
 (0, db_1.default)();
 const app = (0, express_1.default)();
@@ -19,6 +20,7 @@ app.get("/", (_req, res) => {
     res.send("API is running");
 });
 app.use("/api/todos", todos_1.todoRoutes);
+app.use("/api/media", media_1.mediaLogRoutes);
 app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(`Server started on port ${PORT}`);

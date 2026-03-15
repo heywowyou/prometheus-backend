@@ -3,6 +3,7 @@ import express, { type Request, type Response } from "express";
 import cors from "cors";
 import connectDB from "./core/db";
 import { todoRoutes } from "./modules/todos";
+import { mediaLogRoutes } from "./modules/media";
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 app.use("/api/todos", todoRoutes);
+app.use("/api/media", mediaLogRoutes);
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
