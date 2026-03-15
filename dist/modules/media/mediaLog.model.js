@@ -56,5 +56,7 @@ const MediaLogSchema = new mongoose_1.Schema({
 }, { timestamps: true });
 // Index for listing by user, newest first
 MediaLogSchema.index({ userId: 1, createdAt: -1 });
+// Index for listing by user and type, newest first
+MediaLogSchema.index({ userId: 1, type: 1, createdAt: -1 });
 const MediaLog = (0, mongoose_1.model)("MediaLog", MediaLogSchema);
 exports.default = MediaLog;

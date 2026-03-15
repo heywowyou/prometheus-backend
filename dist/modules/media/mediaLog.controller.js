@@ -12,7 +12,12 @@ const getMediaLogs = async (req, res) => {
         if (!userId) {
             return res.status(401).json({ message: "User not authenticated" });
         }
-        const logs = await mediaLog_model_1.default.find({ userId }).sort({ createdAt: -1 });
+        const { type } = req.query;
+        const query = { userId };
+        if (type && ["movie", "tvshow", "book", "music_album", "game"].includes(type)) {
+            query.type = type;
+        }
+        const logs = await mediaLog_model_1.default.find(query).sort({ createdAt: -1 });
         return res.status(200).json(logs);
     }
     catch (error) {

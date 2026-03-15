@@ -84,6 +84,8 @@ const MediaLogSchema = new Schema<MediaLogDocument>(
 
 // Index for listing by user, newest first
 MediaLogSchema.index({ userId: 1, createdAt: -1 });
+// Index for listing by user and type, newest first
+MediaLogSchema.index({ userId: 1, type: 1, createdAt: -1 });
 
 const MediaLog: Model<MediaLogDocument> = model<MediaLogDocument>(
   "MediaLog",
