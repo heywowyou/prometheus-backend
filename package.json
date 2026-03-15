@@ -1,7 +1,7 @@
 {
   "name": "prometheus-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "license": "MIT",
   "dependencies": {
     "@clerk/clerk-sdk-node": "^5.1.6",
@@ -11,10 +11,17 @@
     "mongoose": "^9.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/cors": "^2.8.17",
+    "@types/mongoose": "^5.11.97"
   },
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "tsc"
   }
 }

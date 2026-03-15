@@ -1,6 +1,20 @@
-const mongoose = require("mongoose");
+import { Schema, model, type Document, type Model } from "mongoose";
+import type { RecurrenceType } from "../../core/domain/recurrence";
 
-const TodoSchema = mongoose.Schema(
+export interface TodoDocument extends Document {
+  text: string;
+  completed: boolean;
+  recurrenceType: RecurrenceType;
+  lastCompletedAt?: Date;
+  completionCount: number;
+  interactionType: "checkbox" | "hold";
+  durationGoal: number;
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const TodoSchema = new Schema<TodoDocument>(
   {
     text: {
       type: String,
@@ -40,5 +54,7 @@ const TodoSchema = mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Todo", TodoSchema);
+const Todo: Model<TodoDocument> = model<TodoDocument>("Todo", TodoSchema);
+
+export default Todo;
 

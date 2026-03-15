@@ -1,4 +1,9 @@
-const getNextResetTime = (lastCompletedAt, type) => {
+export type RecurrenceType = "none" | "daily" | "weekly" | "monthly";
+
+export const getNextResetTime = (
+  lastCompletedAt: string | Date | null | undefined,
+  type: RecurrenceType
+): Date => {
   if (!lastCompletedAt) return new Date(0);
 
   const date = new Date(lastCompletedAt);
@@ -17,9 +22,5 @@ const getNextResetTime = (lastCompletedAt, type) => {
 
   date.setHours(0, 0, 0, 0);
   return date;
-};
-
-module.exports = {
-  getNextResetTime,
 };
 
