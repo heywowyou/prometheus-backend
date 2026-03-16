@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import express, { type Request, type Response } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
 import connectDB from "./core/db";
@@ -12,7 +12,7 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:5173" }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -26,6 +26,13 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.use("/api/todos", todoRoutes);
 app.use("/api/media", mediaLogRoutes);
+
+// Global error handler — must be registered after all routes
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  // eslint-disable-next-line no-console
+  console.error(err.stack);
+  res.status(500).json({ message: err.message ?? "Internal server error" });
+});
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console

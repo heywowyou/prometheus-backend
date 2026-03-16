@@ -1,4 +1,4 @@
-import { Schema, model, type Document, type Model } from "mongoose";
+import { Schema, model, type Model } from "mongoose";
 
 export type MediaLogType =
   | "movie"
@@ -7,7 +7,7 @@ export type MediaLogType =
   | "music_album"
   | "game";
 
-export interface MediaLogDocument extends Document {
+export interface IMediaLog {
   type: MediaLogType;
   title: string;
   url?: string;
@@ -25,7 +25,7 @@ export interface MediaLogDocument extends Document {
   updatedAt: Date;
 }
 
-const MediaLogSchema = new Schema<MediaLogDocument>(
+const MediaLogSchema = new Schema<IMediaLog>(
   {
     type: {
       type: String,
@@ -87,9 +87,6 @@ MediaLogSchema.index({ userId: 1, createdAt: -1 });
 // Index for listing by user and type, newest first
 MediaLogSchema.index({ userId: 1, type: 1, createdAt: -1 });
 
-const MediaLog: Model<MediaLogDocument> = model<MediaLogDocument>(
-  "MediaLog",
-  MediaLogSchema
-);
+const MediaLog = model<IMediaLog>("MediaLog", MediaLogSchema);
 
 export default MediaLog;

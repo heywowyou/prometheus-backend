@@ -1,13 +1,13 @@
-import { Schema, model, type Document, type Model, type Types } from "mongoose";
+import { Schema, model, type Model, type Types } from "mongoose";
 
-export interface TodoHistoryDocument extends Document {
+export interface ITodoHistory {
   todoId: Types.ObjectId;
   userId: string;
   completedAt: Date;
-  streakSnapshot?: number;
+  tallySnapshot?: number;
 }
 
-const TodoHistorySchema = new Schema<TodoHistoryDocument>({
+const TodoHistorySchema = new Schema<ITodoHistory>({
   todoId: {
     type: Schema.Types.ObjectId,
     ref: "Todo",
@@ -21,12 +21,12 @@ const TodoHistorySchema = new Schema<TodoHistoryDocument>({
     type: Date,
     default: Date.now,
   },
-  streakSnapshot: {
+  tallySnapshot: {
     type: Number,
   },
 });
 
-const TodoHistory: Model<TodoHistoryDocument> = model<TodoHistoryDocument>(
+const TodoHistory: Model<ITodoHistory> = model<ITodoHistory>(
   "TodoHistory",
   TodoHistorySchema
 );

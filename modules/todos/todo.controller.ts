@@ -114,7 +114,7 @@ export const updateTodo = async (req: Request, res: Response) => {
             userId,
             completedAt: now,
             tallySnapshot: todo.completionCount,
-          } as any);
+          });
         }
         todo.lastCompletedAt = now;
       } else {

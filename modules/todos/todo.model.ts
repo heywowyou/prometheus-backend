@@ -1,7 +1,7 @@
-import { Schema, model, type Document, type Model } from "mongoose";
+import { Schema, model, type Model } from "mongoose";
 import type { RecurrenceType } from "../../core/domain/recurrence";
 
-export interface TodoDocument extends Document {
+export interface ITodo {
   text: string;
   completed: boolean;
   recurrenceType: RecurrenceType;
@@ -14,7 +14,7 @@ export interface TodoDocument extends Document {
   updatedAt: Date;
 }
 
-const TodoSchema = new Schema<TodoDocument>(
+const TodoSchema = new Schema<ITodo>(
   {
     text: {
       type: String,
@@ -54,7 +54,7 @@ const TodoSchema = new Schema<TodoDocument>(
   }
 );
 
-const Todo: Model<TodoDocument> = model<TodoDocument>("Todo", TodoSchema);
+const Todo = model<ITodo>("Todo", TodoSchema);
 
 export default Todo;
 
