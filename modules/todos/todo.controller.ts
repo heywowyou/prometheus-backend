@@ -1,20 +1,12 @@
 import type { Request, Response } from "express";
+import { getAuth } from "@clerk/express";
 import Todo from "./todo.model";
 import TodoHistory from "./todo-history.model";
 import { getNextResetTime, type RecurrenceType } from "../../core/domain/recurrence";
 
-interface AuthenticatedRequest extends Request {
-  auth?: {
-    userId: string;
-  };
-}
-
-const getUserId = (req: AuthenticatedRequest): string | null =>
-  req.auth?.userId ?? null;
-
-export const getTodos = async (req: AuthenticatedRequest, res: Response) => {
+export const getTodos = async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
@@ -29,7 +21,7 @@ export const getTodos = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const createTodo = async (req: AuthenticatedRequest, res: Response) => {
+export const createTodo = async (req: Request, res: Response) => {
   try {
     const { text, recurrenceType, interactionType, durationGoal } = req.body as {
       text?: string;
@@ -38,7 +30,7 @@ export const createTodo = async (req: AuthenticatedRequest, res: Response) => {
       durationGoal?: number;
     };
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
@@ -62,7 +54,7 @@ export const createTodo = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const updateTodo = async (req: AuthenticatedRequest, res: Response) => {
+export const updateTodo = async (req: Request, res: Response) => {
   try {
     const todo = await Todo.findById(req.params.id);
 
@@ -70,7 +62,7 @@ export const updateTodo = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ message: "Todo not found" });
     }
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId || todo.userId !== userId) {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -155,7 +147,7 @@ export const updateTodo = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteTodo = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteTodo = async (req: Request, res: Response) => {
   try {
     const todo = await Todo.findById(req.params.id);
 
@@ -163,7 +155,7 @@ export const deleteTodo = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ message: "Todo not found" });
     }
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId || todo.userId !== userId) {
       return res
         .status(403)

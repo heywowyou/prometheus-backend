@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import express, { type Request, type Response } from "express";
 import cors from "cors";
+import { clerkMiddleware } from "@clerk/express";
 import connectDB from "./core/db";
 import { todoRoutes } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
@@ -15,6 +16,7 @@ app.use(cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use(clerkMiddleware());
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 

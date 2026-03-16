@@ -1,19 +1,10 @@
 import type { Request, Response } from "express";
+import { getAuth } from "@clerk/express";
 import MediaLog, { type MediaLogType } from "./mediaLog.model";
 
-interface AuthenticatedRequest extends Request {
-  auth?: { userId: string };
-}
-
-const getUserId = (req: AuthenticatedRequest): string | null =>
-  req.auth?.userId ?? null;
-
-export const getMediaLogs = async (
-  req: AuthenticatedRequest,
-  res: Response
-) => {
+export const getMediaLogs = async (req: Request, res: Response) => {
   try {
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
@@ -35,10 +26,7 @@ export const getMediaLogs = async (
   }
 };
 
-export const createMediaLog = async (
-  req: AuthenticatedRequest,
-  res: Response
-) => {
+export const createMediaLog = async (req: Request, res: Response) => {
   try {
     const {
       type,
@@ -68,7 +56,7 @@ export const createMediaLog = async (
       artist?: string;
     };
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
@@ -116,17 +104,14 @@ export const createMediaLog = async (
   }
 };
 
-export const updateMediaLog = async (
-  req: AuthenticatedRequest,
-  res: Response
-) => {
+export const updateMediaLog = async (req: Request, res: Response) => {
   try {
     const log = await MediaLog.findById(req.params.id);
     if (!log) {
       return res.status(404).json({ message: "Media log not found" });
     }
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId || log.userId !== userId) {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -218,17 +203,14 @@ export const updateMediaLog = async (
   }
 };
 
-export const deleteMediaLog = async (
-  req: AuthenticatedRequest,
-  res: Response
-) => {
+export const deleteMediaLog = async (req: Request, res: Response) => {
   try {
     const log = await MediaLog.findById(req.params.id);
     if (!log) {
       return res.status(404).json({ message: "Media log not found" });
     }
 
-    const userId = getUserId(req);
+    const { userId } = getAuth(req);
     if (!userId || log.userId !== userId) {
       return res.status(403).json({ message: "Not authorized" });
     }
