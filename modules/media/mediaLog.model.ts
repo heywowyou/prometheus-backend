@@ -82,10 +82,10 @@ const MediaLogSchema = new Schema<IMediaLog>(
   { timestamps: true }
 );
 
-// Index for listing by user, newest first
-MediaLogSchema.index({ userId: 1, createdAt: -1 });
-// Index for listing by user and type, newest first
-MediaLogSchema.index({ userId: 1, type: 1, createdAt: -1 });
+// Index for listing by user, sorted by consumed date
+MediaLogSchema.index({ userId: 1, date: -1 });
+// Index for listing by user and type, sorted by consumed date
+MediaLogSchema.index({ userId: 1, type: 1, date: -1 });
 
 const MediaLog = model<IMediaLog>("MediaLog", MediaLogSchema);
 

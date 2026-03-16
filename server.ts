@@ -1,5 +1,9 @@
 import dotenv from "dotenv";
-import express, { type Request, type Response, type NextFunction } from "express";
+import express, {
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
 import connectDB from "./core/db";
@@ -12,7 +16,9 @@ connectDB();
 
 const app = express();
 
-app.use(cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:5173" }));
+app.use(
+  cors({ origin: (process.env.CORS_ORIGIN ?? "http://localhost:5173").trim() }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -38,4 +44,3 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Server started on port ${PORT}`);
 });
-

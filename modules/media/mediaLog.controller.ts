@@ -16,7 +16,7 @@ export const getMediaLogs = async (req: Request, res: Response) => {
       query.type = type as MediaLogType;
     }
 
-    const logs = await MediaLog.find(query).sort({ createdAt: -1 });
+    const logs = await MediaLog.find(query).sort({ date: -1 });
     return res.status(200).json(logs);
   } catch (error) {
     const err = error as Error;
