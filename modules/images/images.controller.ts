@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { uploadImage } from "../../core/storage/cloudinary";
+import { uploadImage, deleteImage } from "../../core/storage/cloudinary";
 
 export const uploadImageHandler = async (req: Request, res: Response) => {
   try {
@@ -15,5 +15,19 @@ export const uploadImageHandler = async (req: Request, res: Response) => {
   } catch (error) {
     const err = error as Error;
     return res.status(500).json({ message: "Upload failed", error: err.message });
+  }
+};
+
+export const deleteImageHandler = async (req: Request, res: Response) => {
+  try {
+    const publicId = req.query.publicId as string | undefined;
+    if (!publicId) {
+      return res.status(400).json({ message: "publicId query parameter is required" });
+    }
+    await deleteImage(publicId);
+    return res.status(204).send();
+  } catch (error) {
+    const err = error as Error;
+    return res.status(500).json({ message: "Delete failed", error: err.message });
   }
 };

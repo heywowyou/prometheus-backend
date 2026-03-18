@@ -1,5 +1,14 @@
 import { v2 as cloudinary } from "cloudinary";
 
+export async function deleteImage(publicId: string): Promise<void> {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+  await cloudinary.uploader.destroy(publicId);
+}
+
 export async function uploadImage(
   buffer: Buffer,
   options: { folder?: string } = {},

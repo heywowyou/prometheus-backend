@@ -164,7 +164,10 @@ export const updateMediaLog = async (req: Request, res: Response) => {
     if (type != null) log.type = type;
     if (title != null) log.title = title;
     if (url !== undefined) log.url = url || undefined;
-    if (cover !== undefined) log.cover = normalizeCover(cover);
+    if (cover !== undefined) {
+      log.cover = cover === null ? undefined : normalizeCover(cover);
+      log.markModified("cover");
+    }
     if (rating !== undefined) {
       const numRating =
         typeof rating === "number" ? rating : parseInt(String(rating), 10);
