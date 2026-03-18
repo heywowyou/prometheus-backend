@@ -9,6 +9,7 @@ import { clerkMiddleware } from "@clerk/express";
 import connectDB from "./core/db";
 import { todoRoutes } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
+import { imageRoutes } from "./modules/images";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.use("/api/todos", todoRoutes);
 app.use("/api/media", mediaLogRoutes);
+app.use("/api/images", imageRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

@@ -1,6 +1,23 @@
 import type { Request, Response } from "express";
 import { getAuth } from "@clerk/express";
-import MediaLog, { type MediaLogType } from "./mediaLog.model";
+import MediaLog, { type MediaLogType, type CoverImage } from "./mediaLog.model";
+
+function normalizeCover(cover: unknown): CoverImage | undefined {
+  if (!cover) return undefined;
+  if (typeof cover === "string") {
+    return cover ? { url: cover, source: "external" } : undefined;
+  }
+  if (typeof cover === "object" && cover !== null && "url" in cover) {
+    const c = cover as { url?: string; source?: string; publicId?: string };
+    if (!c.url) return undefined;
+    return {
+      url: c.url,
+      source: c.source === "upload" ? "upload" : "external",
+      ...(c.publicId ? { publicId: c.publicId } : {}),
+    };
+  }
+  return undefined;
+}
 
 export const getMediaLogs = async (req: Request, res: Response) => {
   try {
@@ -45,7 +62,7 @@ export const createMediaLog = async (req: Request, res: Response) => {
       type?: MediaLogType;
       title?: string;
       url?: string;
-      cover?: string;
+      cover?: CoverImage | string;
       rating?: number;
       review?: string;
       date?: string | Date;
@@ -84,7 +101,7 @@ export const createMediaLog = async (req: Request, res: Response) => {
       type,
       title,
       url: url ?? undefined,
-      cover: cover ?? undefined,
+      cover: normalizeCover(cover),
       rating: numRating,
       review: review ?? undefined,
       date: parsedDate,
@@ -133,7 +150,7 @@ export const updateMediaLog = async (req: Request, res: Response) => {
       type?: MediaLogType;
       title?: string;
       url?: string;
-      cover?: string;
+      cover?: CoverImage | string | null;
       rating?: number;
       review?: string;
       date?: string | Date;
@@ -147,7 +164,7 @@ export const updateMediaLog = async (req: Request, res: Response) => {
     if (type != null) log.type = type;
     if (title != null) log.title = title;
     if (url !== undefined) log.url = url || undefined;
-    if (cover !== undefined) log.cover = cover || undefined;
+    if (cover !== undefined) log.cover = normalizeCover(cover);
     if (rating !== undefined) {
       const numRating =
         typeof rating === "number" ? rating : parseInt(String(rating), 10);

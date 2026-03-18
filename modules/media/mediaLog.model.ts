@@ -7,11 +7,18 @@ export type MediaLogType =
   | "music_album"
   | "game";
 
+export interface CoverImage {
+  url: string;
+  source: "upload" | "external";
+  publicId?: string;
+}
+
 export interface IMediaLog {
   type: MediaLogType;
   title: string;
   url?: string;
-  cover?: string;
+  /** Structured cover. Legacy documents may still hold a plain string. */
+  cover?: CoverImage | string;
   rating: number; // 1–10
   review?: string;
   date: Date;
@@ -38,7 +45,7 @@ const MediaLogSchema = new Schema<IMediaLog>(
       trim: true,
     },
     url: { type: String, trim: true },
-    cover: { type: String, trim: true },
+    cover: { type: Schema.Types.Mixed },
     rating: {
       type: Number,
       required: true,
