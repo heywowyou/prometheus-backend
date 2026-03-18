@@ -2,7 +2,7 @@ import { v2 as cloudinary } from "cloudinary";
 
 export async function uploadImage(
   buffer: Buffer,
-  options: { folder?: string } = {}
+  options: { folder?: string } = {},
 ): Promise<{ url: string; publicId: string }> {
   // Configure lazily so dotenv has already run by the time this is called.
   cloudinary.config({
@@ -14,16 +14,22 @@ export async function uploadImage(
   return new Promise((resolve, reject) => {
     cloudinary.uploader
       .upload_stream(
-        { folder: options.folder, resource_type: "image" },
+        {
+          folder: options.folder,
+          resource_type: "image",
+          fetch_format: "auto",
+          quality: "auto",
+          width: 800,
+          crop: "limit",
+        },
         (error, result) => {
           if (error || !result) {
             reject(error ?? new Error("Cloudinary upload failed"));
             return;
           }
           resolve({ url: result.secure_url, publicId: result.public_id });
-        }
+        },
       )
       .end(buffer);
   });
 }
-
