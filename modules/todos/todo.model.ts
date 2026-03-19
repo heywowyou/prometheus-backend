@@ -1,4 +1,4 @@
-import { Schema, model, type Model } from "mongoose";
+import { Schema, model } from "mongoose";
 import type { RecurrenceType } from "../../core/domain/recurrence";
 
 export interface ITodo {
@@ -9,6 +9,8 @@ export interface ITodo {
   completionCount: number;
   interactionType: "checkbox" | "hold";
   durationGoal: number;
+  paused: boolean;
+  pausedAt?: Date;
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -43,6 +45,14 @@ const TodoSchema = new Schema<ITodo>(
     durationGoal: {
       type: Number,
       default: 0,
+    },
+    paused: {
+      type: Boolean,
+      default: false,
+    },
+    pausedAt: {
+      type: Date,
+      required: false,
     },
     userId: {
       type: String,

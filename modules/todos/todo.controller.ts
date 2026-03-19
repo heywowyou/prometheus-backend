@@ -11,7 +11,12 @@ export const getTodos = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "User not authenticated" });
     }
 
-    const todos = await Todo.find({ userId });
+    const wantPaused = req.query.paused === "true";
+    const filter = wantPaused
+      ? { userId, paused: true }
+      : { userId, paused: { $ne: true } };
+
+    const todos = await Todo.find(filter);
     return res.status(200).json(todos);
   } catch (error) {
     const err = error as Error;
@@ -144,6 +149,64 @@ export const updateTodo = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ message: "Error updating todo", error: err.message });
+  }
+};
+
+export const pauseTodo = async (req: Request, res: Response) => {
+  try {
+    const todo = await Todo.findById(req.params.id);
+    if (!todo) {
+      return res.status(404).json({ message: "Todo not found" });
+    }
+
+    const { userId } = getAuth(req);
+    if (!userId || todo.userId !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (todo.recurrenceType === "none") {
+      return res
+        .status(400)
+        .json({ message: "Only recurring todos can be paused" });
+    }
+
+    todo.paused = true;
+    todo.pausedAt = new Date();
+    await todo.save();
+    return res.status(200).json(todo);
+  } catch (error) {
+    const err = error as Error;
+    return res
+      .status(500)
+      .json({ message: "Error pausing todo", error: err.message });
+  }
+};
+
+export const resumeTodo = async (req: Request, res: Response) => {
+  try {
+    const todo = await Todo.findById(req.params.id);
+    if (!todo) {
+      return res.status(404).json({ message: "Todo not found" });
+    }
+
+    const { userId } = getAuth(req);
+    if (!userId || todo.userId !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // Reset to active, fresh cycle starting from now so the todo is not
+    // immediately overdue after a potentially long pause.
+    todo.paused = false;
+    todo.pausedAt = undefined;
+    todo.completed = false;
+    todo.lastCompletedAt = new Date();
+    await todo.save();
+    return res.status(200).json(todo);
+  } catch (error) {
+    const err = error as Error;
+    return res
+      .status(500)
+      .json({ message: "Error resuming todo", error: err.message });
   }
 };
 
