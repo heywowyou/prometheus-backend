@@ -10,6 +10,7 @@ import connectDB from "./core/db";
 import { todoRoutes } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
+import { noteRoutes } from "./modules/notes";
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.get("/", (_req: Request, res: Response) => {
 app.use("/api/todos", todoRoutes);
 app.use("/api/media", mediaLogRoutes);
 app.use("/api/images", imageRoutes);
+app.use("/api/notes", noteRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
