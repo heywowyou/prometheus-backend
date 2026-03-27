@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getAuth } from "@clerk/express";
 import MediaLog, { type MediaLogType, type CoverImage } from "./mediaLog.model";
+import { toggleFavorite as toggleFavoriteService } from "./media.service";
 
 function normalizeCover(cover: unknown): CoverImage | undefined {
   if (!cover) return undefined;
@@ -244,5 +245,24 @@ export const deleteMediaLog = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ message: "Error deleting media log", error: err.message });
+  }
+};
+
+export const toggleFavorite = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+    const log = await toggleFavoriteService(req.params.id as string, userId);
+    return res.status(200).json(log);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "NOT_FOUND") {
+      return res.status(404).json({ message: "Media log not found" });
+    }
+    return res
+      .status(500)
+      .json({ message: "Error toggling favorite", error: err.message });
   }
 };

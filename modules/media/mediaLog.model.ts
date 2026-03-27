@@ -1,4 +1,4 @@
-import { Schema, model, type Model } from "mongoose";
+import { Schema, model } from "mongoose";
 
 export type MediaLogType =
   | "movie"
@@ -27,6 +27,7 @@ export interface IMediaLog {
   author?: string;
   pages?: number;
   artist?: string;
+  favorite: boolean;
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -80,6 +81,10 @@ const MediaLogSchema = new Schema<IMediaLog>(
     artist: {
       type: String,
       trim: true,
+    },
+    favorite: {
+      type: Boolean,
+      default: false,
     },
     userId: {
       type: String,
