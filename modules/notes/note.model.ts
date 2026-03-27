@@ -6,6 +6,7 @@ export interface INote {
   userId: string;
   pinned: boolean;
   archived: boolean;
+  fontFamily: "sans" | "serif";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +33,11 @@ const NoteSchema = new Schema<INote>(
     archived: {
       type: Boolean,
       default: false,
+    },
+    fontFamily: {
+      type: String,
+      enum: ["sans", "serif"],
+      default: "sans",
     },
   },
   { timestamps: true }

@@ -5,6 +5,7 @@ export interface NoteUpdatePayload {
   content?: string;
   pinned?: boolean;
   archived?: boolean;
+  fontFamily?: "sans" | "serif";
 }
 
 export const getNotes = async (userId: string) => {
@@ -35,6 +36,7 @@ export const updateNote = async (
   if (data.content !== undefined) note.content = data.content;
   if (data.pinned !== undefined) note.pinned = data.pinned;
   if (data.archived !== undefined) note.archived = data.archived;
+  if (data.fontFamily !== undefined) note.fontFamily = data.fontFamily;
 
   await note.save();
   return note;
