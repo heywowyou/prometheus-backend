@@ -1,243 +1,69 @@
-import type { Request, Response } from "express";
-import { getAuth } from "@clerk/express";
-import Todo from "./todo.model";
-import TodoHistory from "./todo-history.model";
-import { getNextResetTime, type RecurrenceType } from "../../core/domain/recurrence";
+import { getUserId } from "../../core/auth";
+import {
+  asRequiredString,
+  asString,
+  asNumber,
+  asEnum,
+  asyncHandler,
+} from "../../core/http";
+import { RECURRENCE_TYPES } from "../../core/domain";
+import { INTERACTION_TYPES } from "./todo.model";
+import * as TodoService from "./todo.service";
 
-export const getTodos = async (req: Request, res: Response) => {
-  try {
-    const { userId } = getAuth(req);
-    if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
-    }
-
-    const wantPaused = req.query.paused === "true";
-    const filter = wantPaused
-      ? { userId, paused: true }
-      : { userId, paused: { $ne: true } };
-
-    const todos = await Todo.find(filter);
-    return res.status(200).json(todos);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error fetching todos", error: err.message });
-  }
+const parseTodoFields = (body: unknown) => {
+  const b = (body ?? {}) as Record<string, unknown>;
+  return {
+    recurrenceType: asEnum(b.recurrenceType, "recurrenceType", RECURRENCE_TYPES),
+    interactionType: asEnum(b.interactionType, "interactionType", INTERACTION_TYPES),
+    durationGoal: asNumber(b.durationGoal, "durationGoal", { min: 0, integer: true }),
+  };
 };
 
-export const createTodo = async (req: Request, res: Response) => {
-  try {
-    const { text, recurrenceType, interactionType, durationGoal } = req.body as {
-      text?: string;
-      recurrenceType?: RecurrenceType;
-      interactionType?: "checkbox" | "hold";
-      durationGoal?: number;
-    };
+export const listTodos = asyncHandler(async (req, res) => {
+  const todos = await TodoService.listTodos(getUserId(req), {
+    paused: req.query.paused === "true",
+  });
+  res.status(200).json(todos);
+});
 
-    const { userId } = getAuth(req);
-    if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
-    }
-    if (!text) {
-      return res.status(400).json({ message: "Please add a text field" });
-    }
+export const createTodo = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const todo = await TodoService.createTodo(
+    {
+      text: asRequiredString(b.text, "text", { maxLength: 500 }),
+      ...parseTodoFields(b),
+    },
+    getUserId(req),
+  );
+  res.status(201).json(todo);
+});
 
-    const todo = await Todo.create({
-      text,
-      userId,
-      recurrenceType: recurrenceType ?? "none",
-      interactionType: interactionType ?? "checkbox",
-      durationGoal: durationGoal ?? 0,
-    });
-    return res.status(201).json(todo);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error creating todo", error: err.message });
-  }
-};
+export const updateTodo = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const todo = await TodoService.updateTodo(String(req.params.id), getUserId(req), {
+    text: asString(b.text, "text", { maxLength: 500 }) || undefined,
+    ...parseTodoFields(b),
+  });
+  res.status(200).json(todo);
+});
 
-export const updateTodo = async (req: Request, res: Response) => {
-  try {
-    const todo = await Todo.findById(req.params.id);
+export const toggleTodo = asyncHandler(async (req, res) => {
+  const todo = await TodoService.toggleTodo(String(req.params.id), getUserId(req));
+  res.status(200).json(todo);
+});
 
-    if (!todo) {
-      return res.status(404).json({ message: "Todo not found" });
-    }
+export const pauseTodo = asyncHandler(async (req, res) => {
+  const todo = await TodoService.pauseTodo(String(req.params.id), getUserId(req));
+  res.status(200).json(todo);
+});
 
-    const { userId } = getAuth(req);
-    if (!userId || todo.userId !== userId) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
+export const resumeTodo = asyncHandler(async (req, res) => {
+  const todo = await TodoService.resumeTodo(String(req.params.id), getUserId(req));
+  res.status(200).json(todo);
+});
 
-    const { text, recurrenceType, interactionType, durationGoal } = req.body as {
-      text?: string;
-      recurrenceType?: RecurrenceType;
-      interactionType?: "checkbox" | "hold";
-      durationGoal?: number;
-      completed?: boolean;
-    };
-
-    if (text) todo.text = text;
-    if (recurrenceType) todo.recurrenceType = recurrenceType;
-    if (interactionType) todo.interactionType = interactionType;
-    if (durationGoal !== undefined) todo.durationGoal = durationGoal;
-
-    let shouldUpdateStatus = false;
-    let targetStatus: boolean | null = null;
-
-    if (Object.keys(req.body as object).length === 0) {
-      shouldUpdateStatus = true;
-      targetStatus = !todo.completed;
-    } else if (Object.prototype.hasOwnProperty.call(req.body, "completed")) {
-      shouldUpdateStatus = true;
-      targetStatus = (req.body as { completed: boolean }).completed;
-    }
-
-    if (shouldUpdateStatus && targetStatus !== null) {
-      let isCompleting = targetStatus;
-      const now = new Date();
-
-      if (todo.completed && todo.recurrenceType !== "none") {
-        const resetTime = getNextResetTime(
-          todo.lastCompletedAt ?? undefined,
-          todo.recurrenceType
-        );
-        if (now >= resetTime) {
-          isCompleting = true;
-        }
-      }
-
-      if (isCompleting) {
-        todo.completed = true;
-        if (todo.recurrenceType !== "none") {
-          todo.completionCount += 1;
-          await TodoHistory.create({
-            todoId: todo._id,
-            userId,
-            completedAt: now,
-            tallySnapshot: todo.completionCount,
-          });
-        }
-        todo.lastCompletedAt = now;
-      } else {
-        todo.completed = false;
-        if (todo.recurrenceType !== "none") {
-          const latestHistory = await TodoHistory.findOne({
-            todoId: todo._id,
-          }).sort({ completedAt: -1 });
-
-          if (latestHistory) {
-            todo.completionCount -= 1;
-            await TodoHistory.findByIdAndDelete(latestHistory._id);
-          }
-        }
-        if (todo.completionCount === 0 || todo.recurrenceType === "none") {
-          todo.lastCompletedAt = undefined;
-        }
-      }
-    }
-
-    await todo.save();
-    return res.status(200).json(todo);
-  } catch (error) {
-    const err = error as Error;
-    // eslint-disable-next-line no-console
-    console.error(err);
-    return res
-      .status(500)
-      .json({ message: "Error updating todo", error: err.message });
-  }
-};
-
-export const pauseTodo = async (req: Request, res: Response) => {
-  try {
-    const todo = await Todo.findById(req.params.id);
-    if (!todo) {
-      return res.status(404).json({ message: "Todo not found" });
-    }
-
-    const { userId } = getAuth(req);
-    if (!userId || todo.userId !== userId) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    if (todo.recurrenceType === "none") {
-      return res
-        .status(400)
-        .json({ message: "Only recurring todos can be paused" });
-    }
-
-    todo.paused = true;
-    todo.pausedAt = new Date();
-    await todo.save();
-    return res.status(200).json(todo);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error pausing todo", error: err.message });
-  }
-};
-
-export const resumeTodo = async (req: Request, res: Response) => {
-  try {
-    const todo = await Todo.findById(req.params.id);
-    if (!todo) {
-      return res.status(404).json({ message: "Todo not found" });
-    }
-
-    const { userId } = getAuth(req);
-    if (!userId || todo.userId !== userId) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    // Reset to active, fresh cycle starting from now so the todo is not
-    // immediately overdue after a potentially long pause.
-    todo.paused = false;
-    todo.pausedAt = undefined;
-    todo.completed = false;
-    todo.lastCompletedAt = new Date();
-    await todo.save();
-    return res.status(200).json(todo);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error resuming todo", error: err.message });
-  }
-};
-
-export const deleteTodo = async (req: Request, res: Response) => {
-  try {
-    const todo = await Todo.findById(req.params.id);
-
-    if (!todo) {
-      return res.status(404).json({ message: "Todo not found" });
-    }
-
-    const { userId } = getAuth(req);
-    if (!userId || todo.userId !== userId) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to delete this task" });
-    }
-
-    if (todo.recurrenceType !== "none") {
-      await TodoHistory.deleteMany({ todoId: todo._id });
-    }
-
-    await todo.deleteOne();
-    return res
-      .status(200)
-      .json({ id: req.params.id, message: "Todo successfully deleted" });
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error deleting todo", error: err.message });
-  }
-};
-
+export const deleteTodo = asyncHandler(async (req, res) => {
+  const id = String(req.params.id);
+  await TodoService.deleteTodo(id, getUserId(req));
+  res.status(200).json({ id, message: "Todo successfully deleted" });
+});

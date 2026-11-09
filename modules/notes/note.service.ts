@@ -1,51 +1,69 @@
-import Note from "./note.model";
+import type { HydratedDocument } from "mongoose";
+import Note, { type INote, type NoteFontFamily } from "./note.model";
+import { ForbiddenError, NotFoundError } from "../../core/errors/AppError";
 
-export interface NoteUpdatePayload {
+type NoteDoc = HydratedDocument<INote>;
+
+const findOwned = async (id: string, userId: string): Promise<NoteDoc> => {
+  const note = await Note.findById(id);
+  if (!note) throw new NotFoundError("Note");
+  if (note.userId !== userId) throw new ForbiddenError();
+  return note;
+};
+
+export const listNotes = async (
+  userId: string,
+  opts: { archived?: boolean } = {},
+): Promise<NoteDoc[]> =>
+  Note.find({ userId, archived: opts.archived ?? false }).sort({
+    pinned: -1,
+    updatedAt: -1,
+  });
+
+export const getNote = async (id: string, userId: string): Promise<NoteDoc> =>
+  findOwned(id, userId);
+
+export interface CreateNoteInput {
+  title?: string;
+  content?: string;
+}
+
+export const createNote = async (
+  input: CreateNoteInput,
+  userId: string,
+): Promise<NoteDoc> =>
+  Note.create({
+    title: input.title ?? "",
+    content: input.content ?? "",
+    userId,
+  });
+
+export interface UpdateNoteInput {
   title?: string;
   content?: string;
   pinned?: boolean;
   archived?: boolean;
-  fontFamily?: "sans" | "serif";
+  fontFamily?: NoteFontFamily;
 }
-
-export const getNotes = async (userId: string) => {
-  return Note.find({ userId, archived: false }).sort({ pinned: -1, updatedAt: -1 });
-};
-
-export const getNoteById = async (id: string, userId: string) => {
-  return Note.findOne({ _id: id, userId });
-};
-
-export const createNote = async (
-  data: { title: string; content?: string },
-  userId: string
-) => {
-  return Note.create({ ...data, userId });
-};
 
 export const updateNote = async (
   id: string,
   userId: string,
-  data: NoteUpdatePayload
-) => {
-  const note = await Note.findById(id);
-  if (!note) return null;
-  if (note.userId !== userId) return undefined; // signals 403
+  input: UpdateNoteInput,
+): Promise<NoteDoc> => {
+  const note = await findOwned(id, userId);
 
-  if (data.title !== undefined) note.title = data.title;
-  if (data.content !== undefined) note.content = data.content;
-  if (data.pinned !== undefined) note.pinned = data.pinned;
-  if (data.archived !== undefined) note.archived = data.archived;
-  if (data.fontFamily !== undefined) note.fontFamily = data.fontFamily;
+  if (input.title !== undefined) note.title = input.title;
+  if (input.content !== undefined) note.content = input.content;
+  if (input.pinned !== undefined) note.pinned = input.pinned;
+  if (input.archived !== undefined) note.archived = input.archived;
+  if (input.fontFamily !== undefined) note.fontFamily = input.fontFamily;
 
   await note.save();
   return note;
 };
 
-export const deleteNote = async (id: string, userId: string) => {
-  const note = await Note.findById(id);
-  if (!note) return null;
-  if (note.userId !== userId) return undefined; // signals 403
+export const deleteNote = async (id: string, userId: string): Promise<void> => {
+  const note = await findOwned(id, userId);
   await note.deleteOne();
-  return id;
 };

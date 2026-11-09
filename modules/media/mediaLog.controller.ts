@@ -1,268 +1,112 @@
-import type { Request, Response } from "express";
-import { getAuth } from "@clerk/express";
-import MediaLog, { type MediaLogType, type CoverImage } from "./mediaLog.model";
-import { toggleFavorite as toggleFavoriteService } from "./media.service";
+import { getUserId } from "../../core/auth";
+import {
+  asRequiredString,
+  asString,
+  asNumber,
+  asDate,
+  asEnum,
+  asyncHandler,
+  supplied,
+} from "../../core/http";
+import { BadRequestError } from "../../core/errors/AppError";
+import {
+  MEDIA_LOG_TYPES,
+  MEDIA_LOG_STATUSES,
+  COVER_SOURCES,
+  type CoverImage,
+} from "./mediaLog.model";
+import * as MediaService from "./media.service";
 
-function normalizeCover(cover: unknown): CoverImage | undefined {
-  if (!cover) return undefined;
-  if (typeof cover === "string") {
-    return cover ? { url: cover, source: "external" } : undefined;
+/** Accepts either the structured cover or a bare URL string from older clients. */
+const parseCover = (value: unknown): CoverImage | null => {
+  if (value === null || value === "") return null;
+  if (typeof value === "string") return { url: value, source: "external" };
+  if (typeof value !== "object") {
+    throw new BadRequestError("cover must be an object, a URL string, or null");
   }
-  if (typeof cover === "object" && cover !== null && "url" in cover) {
-    const c = cover as { url?: string; source?: string; publicId?: string };
-    if (!c.url) return undefined;
-    return {
-      url: c.url,
-      source: c.source === "upload" ? "upload" : "external",
-      ...(c.publicId ? { publicId: c.publicId } : {}),
-    };
-  }
-  return undefined;
-}
 
-export const getMediaLogs = async (req: Request, res: Response) => {
-  try {
-    const { userId } = getAuth(req);
-    if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
-    }
+  const c = value as Record<string, unknown>;
+  const url = asString(c.url, "cover.url");
+  if (!url) return null;
 
-    const { type } = req.query as { type?: string };
-
-    const query: Record<string, unknown> = { userId };
-    if (type && ["movie", "tvshow", "book", "music_album", "game"].includes(type)) {
-      query.type = type as MediaLogType;
-    }
-
-    const logs = await MediaLog.find(query).sort({ date: -1 });
-    return res.status(200).json(logs);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error fetching media logs", error: err.message });
-  }
+  const source = asEnum(c.source, "cover.source", COVER_SOURCES) ?? "external";
+  const publicId = asString(c.publicId, "cover.publicId");
+  return { url, source, ...(publicId ? { publicId } : {}) };
 };
 
-export const createMediaLog = async (req: Request, res: Response) => {
-  try {
-    const {
+const parseCredits = (b: Record<string, unknown>) => ({
+  director: asString(b.director, "director", { maxLength: 200 }),
+  author: asString(b.author, "author", { maxLength: 200 }),
+  pages: asNumber(b.pages, "pages", { min: 1, integer: true }),
+  artist: asString(b.artist, "artist", { maxLength: 200 }),
+});
+
+export const listMediaLogs = asyncHandler(async (req, res) => {
+  const logs = await MediaService.listLogs(getUserId(req), {
+    type: asEnum(req.query.type, "type", MEDIA_LOG_TYPES),
+  });
+  res.status(200).json(logs);
+});
+
+export const createMediaLog = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+
+  const type = asEnum(b.type, "type", MEDIA_LOG_TYPES);
+  if (!type) throw new BadRequestError("type is required");
+
+  const rating = asNumber(b.rating, "rating", { min: 1, max: 10 });
+  if (rating === undefined) throw new BadRequestError("rating is required");
+
+  const log = await MediaService.createLog(
+    {
       type,
-      title,
-      url,
-      cover,
+      title: asRequiredString(b.title, "title", { maxLength: 300 }),
       rating,
-      review,
-      date,
-      status,
-      director,
-      author,
-      pages,
-      artist,
-    } = req.body as {
-      type?: MediaLogType;
-      title?: string;
-      url?: string;
-      cover?: CoverImage | string;
-      rating?: number;
-      review?: string;
-      date?: string | Date;
-      status?: "finished" | "in_progress";
-      director?: string;
-      author?: string;
-      pages?: number;
-      artist?: string;
-    };
+      date: asDate(b.date, "date") ?? new Date(),
+      url: asString(b.url, "url", { maxLength: 2000 }),
+      cover: parseCover(b.cover) ?? undefined,
+      review: asString(b.review, "review", { maxLength: 10_000 }),
+      status: asEnum(b.status, "status", MEDIA_LOG_STATUSES),
+      ...parseCredits(b),
+    },
+    getUserId(req),
+  );
+  res.status(201).json(log);
+});
 
-    const { userId } = getAuth(req);
-    if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
-    }
-    if (!title || !type) {
-      return res
-        .status(400)
-        .json({ message: "type and title are required" });
-    }
+export const updateMediaLog = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
 
-    const parsedDate =
-      date != null ? new Date(date) : new Date();
-    if (Number.isNaN(parsedDate.getTime())) {
-      return res.status(400).json({ message: "Invalid date" });
-    }
+  const log = await MediaService.updateLog(
+    String(req.params.id),
+    getUserId(req),
+    {
+      type: asEnum(b.type, "type", MEDIA_LOG_TYPES),
+      title: asString(b.title, "title", { maxLength: 300 }) || undefined,
+      rating: asNumber(b.rating, "rating", { min: 1, max: 10 }),
+      date: asDate(b.date, "date"),
+      url: asString(b.url, "url", { maxLength: 2000 }),
+      // Only touch the cover when the client actually sent the key, so a
+      // partial update can't silently delete an existing image.
+      ...(supplied(b, "cover") ? { cover: parseCover(b.cover) } : {}),
+      review: asString(b.review, "review", { maxLength: 10_000 }),
+      status: asEnum(b.status, "status", MEDIA_LOG_STATUSES),
+      ...parseCredits(b),
+    },
+  );
+  res.status(200).json(log);
+});
 
-    const numRating =
-      typeof rating === "number" ? rating : parseInt(String(rating), 10);
-    if (Number.isNaN(numRating) || numRating < 1 || numRating > 10) {
-      return res
-        .status(400)
-        .json({ message: "rating must be a number between 1 and 10" });
-    }
+export const toggleFavorite = asyncHandler(async (req, res) => {
+  const log = await MediaService.toggleFavorite(
+    String(req.params.id),
+    getUserId(req),
+  );
+  res.status(200).json(log);
+});
 
-    const log = await MediaLog.create({
-      type,
-      title,
-      url: url ?? undefined,
-      cover: normalizeCover(cover),
-      rating: numRating,
-      review: review ?? undefined,
-      date: parsedDate,
-      status: status ?? "finished",
-      director: type === "movie" ? director ?? undefined : undefined,
-      author: type === "book" ? author ?? undefined : undefined,
-      pages: type === "book" ? pages ?? undefined : undefined,
-      artist: type === "music_album" ? artist ?? undefined : undefined,
-      userId,
-    });
-    return res.status(201).json(log);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error creating media log", error: err.message });
-  }
-};
-
-export const updateMediaLog = async (req: Request, res: Response) => {
-  try {
-    const log = await MediaLog.findById(req.params.id);
-    if (!log) {
-      return res.status(404).json({ message: "Media log not found" });
-    }
-
-    const { userId } = getAuth(req);
-    if (!userId || log.userId !== userId) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    const {
-      type,
-      title,
-      url,
-      cover,
-      rating,
-      review,
-      date,
-      status,
-      director,
-      author,
-      pages,
-      artist,
-    } = req.body as {
-      type?: MediaLogType;
-      title?: string;
-      url?: string;
-      cover?: CoverImage | string | null;
-      rating?: number;
-      review?: string;
-      date?: string | Date;
-      status?: "finished" | "in_progress";
-      director?: string;
-      author?: string;
-      pages?: number;
-      artist?: string;
-    };
-
-    if (type != null) log.type = type;
-    if (title != null) log.title = title;
-    if (url !== undefined) log.url = url || undefined;
-    if (cover !== undefined) {
-      log.cover = cover === null ? undefined : normalizeCover(cover);
-      log.markModified("cover");
-    }
-    if (rating !== undefined) {
-      const numRating =
-        typeof rating === "number" ? rating : parseInt(String(rating), 10);
-      if (Number.isNaN(numRating) || numRating < 1 || numRating > 10) {
-        return res
-          .status(400)
-          .json({ message: "rating must be a number between 1 and 10" });
-      }
-      log.rating = numRating;
-    }
-
-    if (review !== undefined) {
-      log.review = review || undefined;
-    }
-
-    if (date !== undefined) {
-      const parsedDate = new Date(date);
-      if (Number.isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ message: "Invalid date" });
-      }
-      log.date = parsedDate;
-    }
-
-    if (status !== undefined) {
-      if (status !== "finished" && status !== "in_progress") {
-        return res
-          .status(400)
-          .json({ message: "status must be finished or in_progress" });
-      }
-      log.status = status;
-    }
-
-    if (director !== undefined) {
-      log.director = director || undefined;
-    }
-    if (author !== undefined) {
-      log.author = author || undefined;
-    }
-    if (pages !== undefined) {
-      log.pages = pages;
-    }
-    if (artist !== undefined) {
-      log.artist = artist || undefined;
-    }
-
-    await log.save();
-    return res.status(200).json(log);
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error updating media log", error: err.message });
-  }
-};
-
-export const deleteMediaLog = async (req: Request, res: Response) => {
-  try {
-    const log = await MediaLog.findById(req.params.id);
-    if (!log) {
-      return res.status(404).json({ message: "Media log not found" });
-    }
-
-    const { userId } = getAuth(req);
-    if (!userId || log.userId !== userId) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    await log.deleteOne();
-    return res
-      .status(200)
-      .json({ id: req.params.id, message: "Media log deleted" });
-  } catch (error) {
-    const err = error as Error;
-    return res
-      .status(500)
-      .json({ message: "Error deleting media log", error: err.message });
-  }
-};
-
-export const toggleFavorite = async (req: Request, res: Response) => {
-  try {
-    const { userId } = getAuth(req);
-    if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
-    }
-    const log = await toggleFavoriteService(req.params.id as string, userId);
-    return res.status(200).json(log);
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err.code === "NOT_FOUND") {
-      return res.status(404).json({ message: "Media log not found" });
-    }
-    return res
-      .status(500)
-      .json({ message: "Error toggling favorite", error: err.message });
-  }
-};
+export const deleteMediaLog = asyncHandler(async (req, res) => {
+  const id = String(req.params.id);
+  await MediaService.deleteLog(id, getUserId(req));
+  res.status(200).json({ id, message: "Media log deleted" });
+});

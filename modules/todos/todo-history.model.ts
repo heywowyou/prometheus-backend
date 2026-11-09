@@ -12,24 +12,19 @@ const TodoHistorySchema = new Schema<ITodoHistory>({
     type: Schema.Types.ObjectId,
     ref: "Todo",
     required: true,
+    index: true,
   },
-  userId: {
-    type: String,
-    required: true,
-  },
-  completedAt: {
-    type: Date,
-    default: Date.now,
-  },
-  tallySnapshot: {
-    type: Number,
-  },
+  userId: { type: String, required: true },
+  completedAt: { type: Date, default: Date.now },
+  tallySnapshot: { type: Number },
 });
+
+// Supports "most recent completion for this todo", used when undoing a toggle.
+TodoHistorySchema.index({ todoId: 1, completedAt: -1 });
 
 const TodoHistory: Model<ITodoHistory> = model<ITodoHistory>(
   "TodoHistory",
-  TodoHistorySchema
+  TodoHistorySchema,
 );
 
 export default TodoHistory;
-

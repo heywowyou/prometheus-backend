@@ -1,19 +1,19 @@
 import { Router } from "express";
 import {
-  getMediaLogs,
+  listMediaLogs,
   createMediaLog,
   updateMediaLog,
   deleteMediaLog,
   toggleFavorite,
 } from "./mediaLog.controller";
-import requireUser from "../../core/auth/requireUser";
+import { requireUser } from "../../core/auth";
 
 const router = Router();
 
 router.use(requireUser);
 
-router.route("/").get(getMediaLogs).post(createMediaLog);
-router.route("/:id").put(updateMediaLog).delete(deleteMediaLog);
+router.route("/").get(listMediaLogs).post(createMediaLog);
 router.patch("/:id/favorite", toggleFavorite);
+router.route("/:id").patch(updateMediaLog).delete(deleteMediaLog);
 
 export default router;
