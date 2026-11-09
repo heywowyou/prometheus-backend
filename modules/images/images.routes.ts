@@ -1,6 +1,6 @@
 import { Router } from "express";
-import requireUser from "../../core/auth/requireUser";
-import { uploadSingle } from "../../core/storage/upload.middleware";
+import { requireUser } from "../../core/auth";
+import { uploadSingle } from "../../core/storage";
 import {
   uploadImageHandler,
   uploadFromUrlHandler,

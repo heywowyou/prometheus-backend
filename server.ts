@@ -1,50 +1,70 @@
-import dotenv from "dotenv";
-import express, {
-  type Request,
-  type Response,
-  type NextFunction,
-} from "express";
+import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
-import connectDB from "./core/db";
+
+import config from "./core/config";
+import logger from "./core/logger";
+import connectDB, { disconnectDB } from "./core/db";
+import { errorHandler, notFoundHandler } from "./core/http";
+
 import { todoRoutes } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
 
-dotenv.config();
+export const createApp = () => {
+  const app = express();
 
-connectDB();
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
+  // Note bodies are Tiptap HTML and outgrow the 100 KB default.
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+  app.use(clerkMiddleware());
 
-const app = express();
+  // Kept at both paths: /health for probes, / for anything still pinging the
+  // root the way the pre-refactor server answered it.
+  const health = (_req: Request, res: Response) => {
+    res.status(200).json({ status: "ok" });
+  };
+  app.get("/", health);
+  app.get("/health", health);
 
-app.use(
-  cors({ origin: (process.env.CORS_ORIGIN ?? "http://localhost:5173").trim() }),
-);
+  app.use("/api/todos", todoRoutes);
+  app.use("/api/media", mediaLogRoutes);
+  app.use("/api/images", imageRoutes);
+  app.use("/api/notes", noteRoutes);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(clerkMiddleware());
+  // Must come after every route: unmatched paths become a 404, and all thrown
+  // or rejected handlers land in one place.
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+  return app;
+};
 
-app.get("/", (_req: Request, res: Response) => {
-  res.send("API is running");
-});
+const start = async () => {
+  // Connect before listening so the first request can't hit a cold database.
+  await connectDB();
 
-app.use("/api/todos", todoRoutes);
-app.use("/api/media", mediaLogRoutes);
-app.use("/api/images", imageRoutes);
-app.use("/api/notes", noteRoutes);
+  const server = createApp().listen(config.port, () => {
+    logger.info(`Server listening on port ${config.port} (${config.env})`);
+  });
 
-// Global error handler — must be registered after all routes
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  // eslint-disable-next-line no-console
-  console.error(err.stack);
-  res.status(500).json({ message: err.message ?? "Internal server error" });
-});
+  const shutdown = (signal: string) => {
+    logger.info(`${signal} received, shutting down`);
+    server.close(() => {
+      void disconnectDB().finally(() => process.exit(0));
+    });
+  };
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Server started on port ${PORT}`);
-});
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+};
+
+// Guarded so the app can be imported by a test or script without listening.
+if (require.main === module) {
+  start().catch((error) => {
+    logger.error("Failed to start server", error);
+    process.exit(1);
+  });
+}

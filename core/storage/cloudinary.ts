@@ -1,25 +1,27 @@
 import { v2 as cloudinary } from "cloudinary";
+import config from "../config";
+import logger from "../logger";
 
-export async function deleteImage(publicId: string): Promise<void> {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  });
-  await cloudinary.uploader.destroy(publicId);
+// Configured once at import time; `core/config` has already loaded dotenv.
+cloudinary.config({
+  cloud_name: config.cloudinary.cloudName,
+  api_key: config.cloudinary.apiKey,
+  api_secret: config.cloudinary.apiSecret,
+});
+
+export interface StoredImage {
+  url: string;
+  publicId: string;
+}
+
+export interface UploadOptions {
+  folder?: string;
 }
 
 export async function uploadImage(
   buffer: Buffer,
-  options: { folder?: string } = {},
-): Promise<{ url: string; publicId: string }> {
-  // Configure lazily so dotenv has already run by the time this is called.
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  });
-
+  options: UploadOptions = {},
+): Promise<StoredImage> {
   return new Promise((resolve, reject) => {
     cloudinary.uploader
       .upload_stream(
@@ -41,4 +43,25 @@ export async function uploadImage(
       )
       .end(buffer);
   });
+}
+
+export async function deleteImage(publicId: string): Promise<void> {
+  await cloudinary.uploader.destroy(publicId);
+}
+
+/**
+ * Best-effort cleanup for images whose owning document is going away.
+ *
+ * Deliberately swallows failures: an orphaned Cloudinary asset is a smaller
+ * problem than a delete request that fails after the document is already gone.
+ */
+export async function deleteImageQuietly(
+  publicId: string | undefined | null,
+): Promise<void> {
+  if (!publicId) return;
+  try {
+    await deleteImage(publicId);
+  } catch (error) {
+    logger.warn(`Failed to delete Cloudinary asset ${publicId}`, error);
+  }
 }

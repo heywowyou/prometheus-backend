@@ -1,25 +1,26 @@
 import mongoose from "mongoose";
+import config from "../config";
+import logger from "../logger";
 
+/**
+ * Opens the MongoDB connection. Rejects on failure so the caller can decide
+ * whether to exit — the server must not start accepting requests before the
+ * database is reachable.
+ */
 const connectDB = async (): Promise<void> => {
-  try {
-    const mongoUri = process.env.MONGODB_URI;
+  mongoose.connection.on("disconnected", () => {
+    logger.warn("MongoDB disconnected");
+  });
+  mongoose.connection.on("error", (error) => {
+    logger.error("MongoDB connection error", error);
+  });
 
-    if (!mongoUri) {
-      console.error("MONGODB_URI is not set in this environment");
-      throw new Error("MONGODB_URI environment variable is not set");
-    }
+  const conn = await mongoose.connect(config.mongoUri);
+  logger.info(`MongoDB connected: ${conn.connection.host}`);
+};
 
-    const conn = await mongoose.connect(mongoUri);
-
-    // eslint-disable-next-line no-console
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    const err = error as Error;
-    // eslint-disable-next-line no-console
-    console.error(`Error: ${err.message}`);
-    process.exit(1);
-  }
+export const disconnectDB = async (): Promise<void> => {
+  await mongoose.connection.close();
 };
 
 export default connectDB;
-

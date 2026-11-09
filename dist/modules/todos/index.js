@@ -6,3 +6,4 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.todoRoutes = void 0;
 const todo_routes_1 = __importDefault(require("./todo.routes"));
 exports.todoRoutes = todo_routes_1.default;
+//# sourceMappingURL=index.js.map

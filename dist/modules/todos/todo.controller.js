@@ -1,162 +1,89 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteTodo = exports.updateTodo = exports.createTodo = exports.getTodos = void 0;
-const todo_model_1 = __importDefault(require("./todo.model"));
-const todo_history_model_1 = __importDefault(require("./todo-history.model"));
-const recurrence_1 = require("../../core/domain/recurrence");
-const getUserId = (req) => req.auth?.userId ?? null;
-const getTodos = async (req, res) => {
-    try {
-        const userId = getUserId(req);
-        if (!userId) {
-            return res.status(401).json({ message: "User not authenticated" });
-        }
-        const todos = await todo_model_1.default.find({ userId });
-        return res.status(200).json(todos);
-    }
-    catch (error) {
-        const err = error;
-        return res
-            .status(500)
-            .json({ message: "Error fetching todos", error: err.message });
-    }
+exports.deleteTodo = exports.resumeTodo = exports.pauseTodo = exports.toggleTodo = exports.updateTodo = exports.createTodo = exports.listTodos = void 0;
+const auth_1 = require("../../core/auth");
+const http_1 = require("../../core/http");
+const domain_1 = require("../../core/domain");
+const todo_model_1 = require("./todo.model");
+const TodoService = __importStar(require("./todo.service"));
+const parseTodoFields = (body) => {
+    const b = (body ?? {});
+    return {
+        recurrenceType: (0, http_1.asEnum)(b.recurrenceType, "recurrenceType", domain_1.RECURRENCE_TYPES),
+        interactionType: (0, http_1.asEnum)(b.interactionType, "interactionType", todo_model_1.INTERACTION_TYPES),
+        durationGoal: (0, http_1.asNumber)(b.durationGoal, "durationGoal", { min: 0, integer: true }),
+    };
 };
-exports.getTodos = getTodos;
-const createTodo = async (req, res) => {
-    try {
-        const { text, recurrenceType, interactionType, durationGoal } = req.body;
-        const userId = getUserId(req);
-        if (!userId) {
-            return res.status(401).json({ message: "User not authenticated" });
-        }
-        if (!text) {
-            return res.status(400).json({ message: "Please add a text field" });
-        }
-        const todo = await todo_model_1.default.create({
-            text,
-            userId,
-            recurrenceType: recurrenceType ?? "none",
-            interactionType: interactionType ?? "checkbox",
-            durationGoal: durationGoal ?? 0,
-        });
-        return res.status(201).json(todo);
-    }
-    catch (error) {
-        const err = error;
-        return res
-            .status(500)
-            .json({ message: "Error creating todo", error: err.message });
-    }
-};
-exports.createTodo = createTodo;
-const updateTodo = async (req, res) => {
-    try {
-        const todo = await todo_model_1.default.findById(req.params.id);
-        if (!todo) {
-            return res.status(404).json({ message: "Todo not found" });
-        }
-        const userId = getUserId(req);
-        if (!userId || todo.userId !== userId) {
-            return res.status(403).json({ message: "Not authorized" });
-        }
-        const { text, recurrenceType, interactionType, durationGoal } = req.body;
-        if (text)
-            todo.text = text;
-        if (recurrenceType)
-            todo.recurrenceType = recurrenceType;
-        if (interactionType)
-            todo.interactionType = interactionType;
-        if (durationGoal !== undefined)
-            todo.durationGoal = durationGoal;
-        let shouldUpdateStatus = false;
-        let targetStatus = null;
-        if (Object.keys(req.body).length === 0) {
-            shouldUpdateStatus = true;
-            targetStatus = !todo.completed;
-        }
-        else if (Object.prototype.hasOwnProperty.call(req.body, "completed")) {
-            shouldUpdateStatus = true;
-            targetStatus = req.body.completed;
-        }
-        if (shouldUpdateStatus && targetStatus !== null) {
-            let isCompleting = targetStatus;
-            const now = new Date();
-            if (todo.completed && todo.recurrenceType !== "none") {
-                const resetTime = (0, recurrence_1.getNextResetTime)(todo.lastCompletedAt ?? undefined, todo.recurrenceType);
-                if (now >= resetTime) {
-                    isCompleting = true;
-                }
-            }
-            if (isCompleting) {
-                todo.completed = true;
-                if (todo.recurrenceType !== "none") {
-                    todo.completionCount += 1;
-                    await todo_history_model_1.default.create({
-                        todoId: todo._id,
-                        userId,
-                        completedAt: now,
-                        tallySnapshot: todo.completionCount,
-                    });
-                }
-                todo.lastCompletedAt = now;
-            }
-            else {
-                todo.completed = false;
-                if (todo.recurrenceType !== "none") {
-                    const latestHistory = await todo_history_model_1.default.findOne({
-                        todoId: todo._id,
-                    }).sort({ completedAt: -1 });
-                    if (latestHistory) {
-                        todo.completionCount -= 1;
-                        await todo_history_model_1.default.findByIdAndDelete(latestHistory._id);
-                    }
-                }
-                if (todo.completionCount === 0 || todo.recurrenceType === "none") {
-                    todo.lastCompletedAt = undefined;
-                }
-            }
-        }
-        await todo.save();
-        return res.status(200).json(todo);
-    }
-    catch (error) {
-        const err = error;
-        // eslint-disable-next-line no-console
-        console.error(err);
-        return res
-            .status(500)
-            .json({ message: "Error updating todo", error: err.message });
-    }
-};
-exports.updateTodo = updateTodo;
-const deleteTodo = async (req, res) => {
-    try {
-        const todo = await todo_model_1.default.findById(req.params.id);
-        if (!todo) {
-            return res.status(404).json({ message: "Todo not found" });
-        }
-        const userId = getUserId(req);
-        if (!userId || todo.userId !== userId) {
-            return res
-                .status(403)
-                .json({ message: "Not authorized to delete this task" });
-        }
-        if (todo.recurrenceType !== "none") {
-            await todo_history_model_1.default.deleteMany({ todoId: todo._id });
-        }
-        await todo.deleteOne();
-        return res
-            .status(200)
-            .json({ id: req.params.id, message: "Todo successfully deleted" });
-    }
-    catch (error) {
-        const err = error;
-        return res
-            .status(500)
-            .json({ message: "Error deleting todo", error: err.message });
-    }
-};
-exports.deleteTodo = deleteTodo;
+exports.listTodos = (0, http_1.asyncHandler)(async (req, res) => {
+    const todos = await TodoService.listTodos((0, auth_1.getUserId)(req), {
+        paused: req.query.paused === "true",
+    });
+    res.status(200).json(todos);
+});
+exports.createTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const b = (req.body ?? {});
+    const todo = await TodoService.createTodo({
+        text: (0, http_1.asRequiredString)(b.text, "text", { maxLength: 500 }),
+        ...parseTodoFields(b),
+    }, (0, auth_1.getUserId)(req));
+    res.status(201).json(todo);
+});
+exports.updateTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const b = (req.body ?? {});
+    const todo = await TodoService.updateTodo(String(req.params.id), (0, auth_1.getUserId)(req), {
+        text: (0, http_1.asString)(b.text, "text", { maxLength: 500 }) || undefined,
+        ...parseTodoFields(b),
+    });
+    res.status(200).json(todo);
+});
+exports.toggleTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const todo = await TodoService.toggleTodo(String(req.params.id), (0, auth_1.getUserId)(req));
+    res.status(200).json(todo);
+});
+exports.pauseTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const todo = await TodoService.pauseTodo(String(req.params.id), (0, auth_1.getUserId)(req));
+    res.status(200).json(todo);
+});
+exports.resumeTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const todo = await TodoService.resumeTodo(String(req.params.id), (0, auth_1.getUserId)(req));
+    res.status(200).json(todo);
+});
+exports.deleteTodo = (0, http_1.asyncHandler)(async (req, res) => {
+    const id = String(req.params.id);
+    await TodoService.deleteTodo(id, (0, auth_1.getUserId)(req));
+    res.status(200).json({ id, message: "Todo successfully deleted" });
+});
+//# sourceMappingURL=todo.controller.js.map

@@ -1,6 +1,12 @@
 import { Router } from "express";
-import { listNotes, getNote, createNote, updateNote, deleteNote } from "./note.controller";
-import requireUser from "../../core/auth/requireUser";
+import {
+  listNotes,
+  getNote,
+  createNote,
+  updateNote,
+  deleteNote,
+} from "./note.controller";
+import { requireUser } from "../../core/auth";
 
 const router = Router();
 
