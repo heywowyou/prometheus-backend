@@ -7,8 +7,9 @@ import {
   asyncHandler,
   getRequestTimeZone,
 } from "../../core/http";
+import { BadRequestError } from "../../core/errors/AppError";
 import { RECURRENCE_TYPES } from "../../core/domain";
-import { INTERACTION_TYPES } from "./todo.model";
+import { INTERACTION_TYPES, MAX_DURATION_GOAL } from "./todo.model";
 import * as TodoService from "./todo.service";
 
 const parseTodoFields = (body: unknown) => {
@@ -16,7 +17,11 @@ const parseTodoFields = (body: unknown) => {
   return {
     recurrenceType: asEnum(b.recurrenceType, "recurrenceType", RECURRENCE_TYPES),
     interactionType: asEnum(b.interactionType, "interactionType", INTERACTION_TYPES),
-    durationGoal: asNumber(b.durationGoal, "durationGoal", { min: 0, integer: true }),
+    durationGoal: asNumber(b.durationGoal, "durationGoal", {
+      min: 0,
+      max: MAX_DURATION_GOAL,
+      integer: true,
+    }),
   };
 };
 
@@ -62,6 +67,32 @@ export const toggleTodo = asyncHandler(async (req, res) => {
     getRequestTimeZone(req),
   );
   res.status(200).json(todo);
+});
+
+export const updateTimer = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const action = asEnum(b.action, "action", TodoService.TIMER_ACTIONS);
+  if (!action) throw new BadRequestError("action is required");
+
+  const todo = await TodoService.updateTimer(
+    String(req.params.id),
+    getUserId(req),
+    action,
+    getRequestTimeZone(req),
+  );
+  res.status(200).json(todo);
+});
+
+export const getTodoHistory = asyncHandler(async (req, res) => {
+  const days =
+    asNumber(req.query.days, "days", { min: 7, max: 730, integer: true }) ?? 182;
+  const history = await TodoService.getTodoHistory(
+    String(req.params.id),
+    getUserId(req),
+    days,
+    getRequestTimeZone(req),
+  );
+  res.status(200).json(history);
 });
 
 export const pauseTodo = asyncHandler(async (req, res) => {

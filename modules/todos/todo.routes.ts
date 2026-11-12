@@ -4,6 +4,8 @@ import {
   createTodo,
   updateTodo,
   toggleTodo,
+  updateTimer,
+  getTodoHistory,
   pauseTodo,
   resumeTodo,
   deleteTodo,
@@ -19,6 +21,8 @@ router.route("/").get(listTodos).post(createTodo);
 // Completion is its own endpoint: toggling and editing fields were previously
 // inferred from the request body shape, which made both paths easy to break.
 router.patch("/:id/toggle", toggleTodo);
+router.patch("/:id/timer", updateTimer);
+router.get("/:id/history", getTodoHistory);
 router.patch("/:id/pause", pauseTodo);
 router.patch("/:id/resume", resumeTodo);
 
