@@ -89,7 +89,7 @@ export const listLogs = async (
 export interface CreateMediaLogInput {
   type: MediaLogType;
   title: string;
-  rating: number;
+  rating?: number;
   date: Date;
   url?: string;
   cover?: CoverImage;
@@ -144,8 +144,10 @@ export const createLog = async (
 
 export interface UpdateMediaLogInput
   extends Partial<
-    Omit<CreateMediaLogInput, "cover" | "releaseYear" | "external">
+    Omit<CreateMediaLogInput, "cover" | "releaseYear" | "external" | "rating">
   > {
+  /** `null` clears the rating; `undefined` leaves it unchanged. */
+  rating?: number | null;
   /** `null` clears the cover; `undefined` leaves it unchanged. */
   cover?: CoverImage | null;
   /** `null` clears the field; `undefined` leaves it unchanged. */
@@ -164,7 +166,7 @@ export const updateLog = async (
   if (input.type !== undefined) log.type = input.type;
   if (input.title !== undefined) log.title = input.title;
   if (input.url !== undefined) log.url = input.url || undefined;
-  if (input.rating !== undefined) log.rating = input.rating;
+  if (input.rating !== undefined) log.rating = input.rating ?? undefined;
   if (input.review !== undefined) log.review = input.review || undefined;
   if (input.date !== undefined) log.date = input.date;
   if (input.status !== undefined) log.status = input.status;

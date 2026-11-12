@@ -14,7 +14,17 @@ export const MEDIA_LOG_TYPES = [
 ] as const;
 export type MediaLogType = (typeof MEDIA_LOG_TYPES)[number];
 
-export const MEDIA_LOG_STATUSES = ["finished", "in_progress"] as const;
+/**
+ * Where a title stands. `planned` is the watchlist/backlog; `dropped` keeps a
+ * record of things abandoned. `date` means: finished on / started on / added
+ * on / dropped on, respectively.
+ */
+export const MEDIA_LOG_STATUSES = [
+  "finished",
+  "in_progress",
+  "planned",
+  "dropped",
+] as const;
 export type MediaLogStatus = (typeof MEDIA_LOG_STATUSES)[number];
 
 export const COVER_SOURCES = ["upload", "external"] as const;
@@ -34,7 +44,8 @@ export interface IMediaLog extends UserItemBase {
   /** Structured cover. Documents written before the cover refactor may still
    *  hold a plain URL string; read them through `resolveCover`. */
   cover?: CoverImage | string;
-  rating: number;
+  /** 1–10; optional because a planned or unfinished title has no rating yet. */
+  rating?: number;
   review?: string;
   date: Date;
   status: MediaLogStatus;
@@ -70,7 +81,6 @@ const MediaLogSchema = new Schema<IMediaLog>(
     cover: { type: Schema.Types.Mixed },
     rating: {
       type: Number,
-      required: true,
       min: [1, "Rating must be at least 1"],
       max: [10, "Rating must be at most 10"],
     },
