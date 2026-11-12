@@ -10,6 +10,9 @@ import type { UserItemBase } from "../../core/domain";
 export const INTERACTION_TYPES = ["checkbox", "timer"] as const;
 export type InteractionType = (typeof INTERACTION_TYPES)[number];
 
+/** A calendar day, `YYYY-MM-DD`: no time zone can shift it. */
+export const DUE_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
 /** Upper bound on a timed task's target, in minutes. */
 export const MAX_DURATION_GOAL = 24 * 60;
 
@@ -31,6 +34,8 @@ export interface ITodo extends UserItemBase {
   timerStartedAt?: Date;
   /** Last change to the timer; banked progress from an elapsed cycle is void. */
   timerUpdatedAt?: Date;
+  /** One-time tasks only: the day it should be done by. */
+  dueDate?: string;
   paused: boolean;
   pausedAt?: Date;
 }
@@ -60,6 +65,10 @@ const TodoSchema = new Schema<ITodo>(
     timerElapsedMs: { type: Number, default: 0, min: 0 },
     timerStartedAt: { type: Date },
     timerUpdatedAt: { type: Date },
+    dueDate: {
+      type: String,
+      match: [DUE_DATE_PATTERN, "dueDate must be YYYY-MM-DD"],
+    },
     paused: { type: Boolean, default: false },
     pausedAt: { type: Date, required: false },
     userId: { type: String, required: true },

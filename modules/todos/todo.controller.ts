@@ -6,10 +6,11 @@ import {
   asEnum,
   asyncHandler,
   getRequestTimeZone,
+  supplied,
 } from "../../core/http";
 import { BadRequestError } from "../../core/errors/AppError";
 import { RECURRENCE_TYPES } from "../../core/domain";
-import { INTERACTION_TYPES, MAX_DURATION_GOAL } from "./todo.model";
+import { DUE_DATE_PATTERN, INTERACTION_TYPES, MAX_DURATION_GOAL } from "./todo.model";
 import * as TodoService from "./todo.service";
 
 const parseTodoFields = (body: unknown) => {
@@ -23,6 +24,17 @@ const parseTodoFields = (body: unknown) => {
       integer: true,
     }),
   };
+};
+
+/** `YYYY-MM-DD`, or null to clear; undefined when absent. */
+const parseDueDate = (value: unknown): string | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const day = asString(value, "dueDate");
+  if (!day || !DUE_DATE_PATTERN.test(day)) {
+    throw new BadRequestError("dueDate must be YYYY-MM-DD");
+  }
+  return day;
 };
 
 export const listTodos = asyncHandler(async (req, res) => {
@@ -39,6 +51,7 @@ export const createTodo = asyncHandler(async (req, res) => {
     {
       text: asRequiredString(b.text, "text", { maxLength: 500 }),
       ...parseTodoFields(b),
+      dueDate: parseDueDate(b.dueDate) ?? undefined,
     },
     getUserId(req),
     getRequestTimeZone(req),
@@ -54,6 +67,7 @@ export const updateTodo = asyncHandler(async (req, res) => {
     {
       text: asString(b.text, "text", { maxLength: 500 }) || undefined,
       ...parseTodoFields(b),
+      ...(supplied(b, "dueDate") ? { dueDate: parseDueDate(b.dueDate) ?? null } : {}),
     },
     getRequestTimeZone(req),
   );
