@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { isValidTimeZone } from "../domain/recurrence";
 
 dotenv.config();
 
@@ -37,12 +38,22 @@ export const config = {
     apiKey: required("CLOUDINARY_API_KEY"),
     apiSecret: required("CLOUDINARY_API_SECRET"),
   },
+  /**
+   * IANA zone used for day/week boundaries when a request doesn't name one.
+   * The frontend sends the browser's zone on every request, so this is only a
+   * fallback for scripts and older clients.
+   */
+  timeZone: optional("APP_TIMEZONE", "UTC"),
 } as const;
 
 export const isProduction = config.env === "production";
 
 if (!Number.isFinite(config.port) || config.port <= 0) {
   throw new Error(`PORT must be a positive number, received "${process.env.PORT}"`);
+}
+
+if (!isValidTimeZone(config.timeZone)) {
+  throw new Error(`APP_TIMEZONE is not a valid IANA time zone: "${config.timeZone}"`);
 }
 
 export default config;

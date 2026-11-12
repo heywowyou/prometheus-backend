@@ -15,18 +15,24 @@ type TodoDoc = HydratedDocument<ITodo>;
  * cycle. A daily todo completed yesterday is stored as `completed: true` but is
  * due again today.
  */
-const isCurrentlyComplete = (todo: ITodo, now = new Date()): boolean => {
+const isCurrentlyComplete = (
+  todo: ITodo,
+  timeZone: string,
+  now = new Date(),
+): boolean => {
   if (!todo.completed) return false;
   if (todo.recurrenceType === "none") return true;
-  return now < getNextResetTime(todo.lastCompletedAt, todo.recurrenceType);
+  return (
+    now < getNextResetTime(todo.lastCompletedAt, todo.recurrenceType, timeZone)
+  );
 };
 
 /**
  * The client-facing shape of a todo.
  *
  * `completed` is the *live* value rather than the stored one, so clients never
- * have to recompute recurrence rollover themselves. `completedCycleAt` exposes
- * the stored completion for history display.
+ * have to recompute recurrence rollover themselves. Cycle boundaries are
+ * midnights in the caller's `timeZone`.
  */
 export interface TodoView extends Omit<ITodo, "completed"> {
   _id: string;
@@ -35,8 +41,12 @@ export interface TodoView extends Omit<ITodo, "completed"> {
   dueAgainSince?: Date;
 }
 
-export const toView = (todo: TodoDoc, now = new Date()): TodoView => {
-  const live = isCurrentlyComplete(todo, now);
+export const toView = (
+  todo: TodoDoc,
+  timeZone: string,
+  now = new Date(),
+): TodoView => {
+  const live = isCurrentlyComplete(todo, timeZone, now);
   const object = todo.toObject({ versionKey: false }) as ITodo & { _id: unknown };
 
   return {
@@ -44,7 +54,13 @@ export const toView = (todo: TodoDoc, now = new Date()): TodoView => {
     _id: String(todo._id),
     completed: live,
     ...(todo.completed && !live
-      ? { dueAgainSince: getNextResetTime(todo.lastCompletedAt, todo.recurrenceType) }
+      ? {
+          dueAgainSince: getNextResetTime(
+            todo.lastCompletedAt,
+            todo.recurrenceType,
+            timeZone,
+          ),
+        }
       : {}),
   };
 };
@@ -59,7 +75,7 @@ const findOwned = async (id: string, userId: string): Promise<TodoDoc> => {
 
 export const listTodos = async (
   userId: string,
-  opts: { paused?: boolean } = {},
+  opts: { paused?: boolean; timeZone: string },
 ): Promise<TodoView[]> => {
   const filter = opts.paused
     ? { userId, paused: true }
@@ -67,7 +83,7 @@ export const listTodos = async (
 
   const todos = await Todo.find(filter).sort({ createdAt: -1 });
   const now = new Date();
-  return todos.map((todo) => toView(todo, now));
+  return todos.map((todo) => toView(todo, opts.timeZone, now));
 };
 
 export interface CreateTodoInput {
@@ -80,6 +96,7 @@ export interface CreateTodoInput {
 export const createTodo = async (
   input: CreateTodoInput,
   userId: string,
+  timeZone: string,
 ): Promise<TodoView> => {
   const todo = await Todo.create({
     text: input.text,
@@ -88,7 +105,7 @@ export const createTodo = async (
     interactionType: input.interactionType ?? "checkbox",
     durationGoal: input.durationGoal ?? 0,
   });
-  return toView(todo);
+  return toView(todo, timeZone);
 };
 
 export type UpdateTodoInput = Partial<CreateTodoInput>;
@@ -97,6 +114,7 @@ export const updateTodo = async (
   id: string,
   userId: string,
   input: UpdateTodoInput,
+  timeZone: string,
 ): Promise<TodoView> => {
   const todo = await findOwned(id, userId);
 
@@ -116,7 +134,7 @@ export const updateTodo = async (
   }
 
   await todo.save();
-  return toView(todo);
+  return toView(todo, timeZone);
 };
 
 /**
@@ -129,12 +147,13 @@ export const updateTodo = async (
 export const toggleTodo = async (
   id: string,
   userId: string,
+  timeZone: string,
 ): Promise<TodoView> => {
   const todo = await findOwned(id, userId);
   const now = new Date();
   const isRecurring = todo.recurrenceType !== "none";
 
-  if (isCurrentlyComplete(todo, now)) {
+  if (isCurrentlyComplete(todo, timeZone, now)) {
     todo.completed = false;
 
     if (isRecurring) {
@@ -168,12 +187,13 @@ export const toggleTodo = async (
   }
 
   await todo.save();
-  return toView(todo, now);
+  return toView(todo, timeZone, now);
 };
 
 export const pauseTodo = async (
   id: string,
   userId: string,
+  timeZone: string,
 ): Promise<TodoView> => {
   const todo = await findOwned(id, userId);
 
@@ -184,12 +204,13 @@ export const pauseTodo = async (
   todo.paused = true;
   todo.pausedAt = new Date();
   await todo.save();
-  return toView(todo);
+  return toView(todo, timeZone);
 };
 
 export const resumeTodo = async (
   id: string,
   userId: string,
+  timeZone: string,
 ): Promise<TodoView> => {
   const todo = await findOwned(id, userId);
 
@@ -200,7 +221,7 @@ export const resumeTodo = async (
   todo.completed = false;
   todo.lastCompletedAt = new Date();
   await todo.save();
-  return toView(todo);
+  return toView(todo, timeZone);
 };
 
 export const deleteTodo = async (id: string, userId: string): Promise<void> => {
