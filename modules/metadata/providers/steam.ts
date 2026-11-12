@@ -58,7 +58,9 @@ export const steam: MetadataAdapter = {
           provider: "steam",
           externalId: String(item.id),
           title: item.name as string,
-          thumbnailUrl: item.tiny_image,
+          // Portrait box art fits the cover grid; the dropdown hides it if
+          // an old title has none.
+          thumbnailUrl: portrait(String(item.id)),
         }),
       );
   },

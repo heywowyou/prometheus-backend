@@ -41,7 +41,7 @@ const get = <T>(path: string, params: Record<string, string> = {}) => {
   });
 };
 
-const poster = (path: string | null | undefined, size: "w92" | "w500") =>
+const poster = (path: string | null | undefined, size: "w185" | "w500") =>
   path ? `${IMAGES}/${size}${path}` : undefined;
 
 /** Only show the original title when it differs, e.g. for foreign films. */
@@ -64,7 +64,7 @@ export const tmdbMovies: MetadataAdapter = {
       title: movie.title ?? "Untitled",
       year: parseYear(movie.release_date),
       subtitle: originalIfDifferent(movie.title, movie.original_title),
-      thumbnailUrl: poster(movie.poster_path, "w92"),
+      thumbnailUrl: poster(movie.poster_path, "w185"),
     }));
   },
 
@@ -101,7 +101,7 @@ export const tmdbShows: MetadataAdapter = {
       title: show.name ?? "Untitled",
       year: parseYear(show.first_air_date),
       subtitle: originalIfDifferent(show.name, show.original_name),
-      thumbnailUrl: poster(show.poster_path, "w92"),
+      thumbnailUrl: poster(show.poster_path, "w185"),
     }));
   },
 

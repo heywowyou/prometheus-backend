@@ -75,14 +75,11 @@ export const createMediaLog = asyncHandler(async (req, res) => {
   const type = asEnum(b.type, "type", MEDIA_LOG_TYPES);
   if (!type) throw new BadRequestError("type is required");
 
-  const rating = asNumber(b.rating, "rating", { min: 1, max: 10 });
-  if (rating === undefined) throw new BadRequestError("rating is required");
-
   const log = await MediaService.createLog(
     {
       type,
       title: asRequiredString(b.title, "title", { maxLength: 300 }),
-      rating,
+      rating: asNumber(b.rating, "rating", { min: 1, max: 10, integer: true }),
       date: asDate(b.date, "date") ?? new Date(),
       url: asString(b.url, "url", { maxLength: 2000 }),
       cover: parseCover(b.cover) ?? undefined,
@@ -106,7 +103,10 @@ export const updateMediaLog = asyncHandler(async (req, res) => {
     {
       type: asEnum(b.type, "type", MEDIA_LOG_TYPES),
       title: asString(b.title, "title", { maxLength: 300 }) || undefined,
-      rating: asNumber(b.rating, "rating", { min: 1, max: 10 }),
+      // null clears the rating (e.g. moving a title back to "planned").
+      ...(supplied(b, "rating")
+        ? { rating: asNumber(b.rating, "rating", { min: 1, max: 10, integer: true }) ?? null }
+        : {}),
       date: asDate(b.date, "date"),
       url: asString(b.url, "url", { maxLength: 2000 }),
       // Only touch the cover when the client actually sent the key, so a
