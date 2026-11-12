@@ -23,7 +23,7 @@ export interface ITodo extends UserItemBase {
   completed: boolean;
   recurrenceType: RecurrenceType;
   lastCompletedAt?: Date;
-  /** Total completions ever (one per cycle). Not a streak — see todo.streak. */
+  /** Total completions ever (one per cycle). Not a streak — see core/domain/streak. */
   completionCount: number;
   interactionType: InteractionType;
   /** Target minutes. Required (≥ 1) for timer tasks; a hint for checkboxes. */

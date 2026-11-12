@@ -70,3 +70,10 @@ export class ServiceUnavailableError extends AppError {
     super(503, "SERVICE_UNAVAILABLE", message);
   }
 }
+
+/** The request clashes with the current state, e.g. a second live workout. */
+export class ConflictError extends AppError {
+  constructor(code: string, message: string) {
+    super(409, code, message);
+  }
+}

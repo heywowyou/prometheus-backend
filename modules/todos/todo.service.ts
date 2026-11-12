@@ -1,7 +1,7 @@
 import type { HydratedDocument, Types } from "mongoose";
 import Todo, { type ITodo, type InteractionType } from "./todo.model";
 import TodoHistory from "./todo-history.model";
-import { computeStreak, type Streak } from "./todo.streak";
+import { computeStreak, type Streak } from "../../core/domain";
 import {
   getNextResetTime,
   localDateKey,
