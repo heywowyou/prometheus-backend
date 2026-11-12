@@ -5,6 +5,7 @@ import {
   asNumber,
   asEnum,
   asyncHandler,
+  getRequestTimeZone,
 } from "../../core/http";
 import { RECURRENCE_TYPES } from "../../core/domain";
 import { INTERACTION_TYPES } from "./todo.model";
@@ -22,6 +23,7 @@ const parseTodoFields = (body: unknown) => {
 export const listTodos = asyncHandler(async (req, res) => {
   const todos = await TodoService.listTodos(getUserId(req), {
     paused: req.query.paused === "true",
+    timeZone: getRequestTimeZone(req),
   });
   res.status(200).json(todos);
 });
@@ -34,31 +36,49 @@ export const createTodo = asyncHandler(async (req, res) => {
       ...parseTodoFields(b),
     },
     getUserId(req),
+    getRequestTimeZone(req),
   );
   res.status(201).json(todo);
 });
 
 export const updateTodo = asyncHandler(async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
-  const todo = await TodoService.updateTodo(String(req.params.id), getUserId(req), {
-    text: asString(b.text, "text", { maxLength: 500 }) || undefined,
-    ...parseTodoFields(b),
-  });
+  const todo = await TodoService.updateTodo(
+    String(req.params.id),
+    getUserId(req),
+    {
+      text: asString(b.text, "text", { maxLength: 500 }) || undefined,
+      ...parseTodoFields(b),
+    },
+    getRequestTimeZone(req),
+  );
   res.status(200).json(todo);
 });
 
 export const toggleTodo = asyncHandler(async (req, res) => {
-  const todo = await TodoService.toggleTodo(String(req.params.id), getUserId(req));
+  const todo = await TodoService.toggleTodo(
+    String(req.params.id),
+    getUserId(req),
+    getRequestTimeZone(req),
+  );
   res.status(200).json(todo);
 });
 
 export const pauseTodo = asyncHandler(async (req, res) => {
-  const todo = await TodoService.pauseTodo(String(req.params.id), getUserId(req));
+  const todo = await TodoService.pauseTodo(
+    String(req.params.id),
+    getUserId(req),
+    getRequestTimeZone(req),
+  );
   res.status(200).json(todo);
 });
 
 export const resumeTodo = asyncHandler(async (req, res) => {
-  const todo = await TodoService.resumeTodo(String(req.params.id), getUserId(req));
+  const todo = await TodoService.resumeTodo(
+    String(req.params.id),
+    getUserId(req),
+    getRequestTimeZone(req),
+  );
   res.status(200).json(todo);
 });
 
