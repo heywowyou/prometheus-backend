@@ -5,6 +5,7 @@ import {
   updateTodo,
   toggleTodo,
   updateTimer,
+  reorderTodos,
   getTodoHistory,
   pauseTodo,
   resumeTodo,
@@ -17,6 +18,8 @@ const router = Router();
 router.use(requireUser);
 
 router.route("/").get(listTodos).post(createTodo);
+// Before /:id, which would otherwise read "reorder" as an id.
+router.patch("/reorder", reorderTodos);
 
 // Completion is its own endpoint: toggling and editing fields were previously
 // inferred from the request body shape, which made both paths easy to break.

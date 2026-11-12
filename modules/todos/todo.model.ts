@@ -36,6 +36,12 @@ export interface ITodo extends UserItemBase {
   timerUpdatedAt?: Date;
   /** One-time tasks only: the day it should be done by. */
   dueDate?: string;
+  /**
+   * Manual position within its section (recurrence type), set by drag and
+   * drop. Absent on tasks never reordered; the client orders those first by
+   * its automatic rule.
+   */
+  order?: number;
   paused: boolean;
   pausedAt?: Date;
 }
@@ -65,6 +71,7 @@ const TodoSchema = new Schema<ITodo>(
     timerElapsedMs: { type: Number, default: 0, min: 0 },
     timerStartedAt: { type: Date },
     timerUpdatedAt: { type: Date },
+    order: { type: Number },
     dueDate: {
       type: String,
       match: [DUE_DATE_PATTERN, "dueDate must be YYYY-MM-DD"],
