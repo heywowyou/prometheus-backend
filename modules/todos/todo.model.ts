@@ -2,8 +2,16 @@ import { Schema, model, type Model } from "mongoose";
 import { RECURRENCE_TYPES, type RecurrenceType } from "../../core/domain";
 import type { UserItemBase } from "../../core/domain";
 
-export const INTERACTION_TYPES = ["checkbox", "hold"] as const;
+/**
+ * How a todo is ticked: a plain checkbox, or a timer that completes the task
+ * once `durationGoal` minutes have been spent on it. ("hold", the old
+ * press-and-hold mode, is migrated away at startup.)
+ */
+export const INTERACTION_TYPES = ["checkbox", "timer"] as const;
 export type InteractionType = (typeof INTERACTION_TYPES)[number];
+
+/** Upper bound on a timed task's target, in minutes. */
+export const MAX_DURATION_GOAL = 24 * 60;
 
 export interface ITodo extends UserItemBase {
   text: string;
@@ -12,9 +20,17 @@ export interface ITodo extends UserItemBase {
   completed: boolean;
   recurrenceType: RecurrenceType;
   lastCompletedAt?: Date;
+  /** Total completions ever (one per cycle). Not a streak — see todo.streak. */
   completionCount: number;
   interactionType: InteractionType;
+  /** Target minutes. Required (≥ 1) for timer tasks; a hint for checkboxes. */
   durationGoal: number;
+  /** Timer progress banked by earlier start/pause sessions, in ms. */
+  timerElapsedMs: number;
+  /** Set while the timer is running. */
+  timerStartedAt?: Date;
+  /** Last change to the timer; banked progress from an elapsed cycle is void. */
+  timerUpdatedAt?: Date;
   paused: boolean;
   pausedAt?: Date;
 }
@@ -40,7 +56,10 @@ const TodoSchema = new Schema<ITodo>(
       enum: INTERACTION_TYPES,
       default: "checkbox",
     },
-    durationGoal: { type: Number, default: 0, min: 0 },
+    durationGoal: { type: Number, default: 0, min: 0, max: MAX_DURATION_GOAL },
+    timerElapsedMs: { type: Number, default: 0, min: 0 },
+    timerStartedAt: { type: Date },
+    timerUpdatedAt: { type: Date },
     paused: { type: Boolean, default: false },
     pausedAt: { type: Date, required: false },
     userId: { type: String, required: true },
@@ -52,5 +71,22 @@ const TodoSchema = new Schema<ITodo>(
 TodoSchema.index({ userId: 1, paused: 1, createdAt: -1 });
 
 const Todo: Model<ITodo> = model<ITodo>("Todo", TodoSchema);
+
+/**
+ * Converts the retired "hold" mode: holds with a target become timers, the
+ * rest checkboxes. Idempotent and cheap, so it runs on every startup.
+ * Uses the raw collection because "hold" is no longer a valid enum value.
+ */
+export const migrateLegacyHoldTodos = async (): Promise<number> => {
+  const timers = await Todo.collection.updateMany(
+    { interactionType: "hold", durationGoal: { $gt: 0 } },
+    { $set: { interactionType: "timer" } },
+  );
+  const checkboxes = await Todo.collection.updateMany(
+    { interactionType: "hold" },
+    { $set: { interactionType: "checkbox" } },
+  );
+  return timers.modifiedCount + checkboxes.modifiedCount;
+};
 
 export default Todo;

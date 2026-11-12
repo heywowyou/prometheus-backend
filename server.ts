@@ -7,7 +7,7 @@ import logger from "./core/logger";
 import connectDB, { disconnectDB } from "./core/db";
 import { errorHandler, notFoundHandler } from "./core/http";
 
-import { todoRoutes } from "./modules/todos";
+import { todoRoutes, migrateLegacyHoldTodos } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
@@ -47,6 +47,10 @@ export const createApp = () => {
 const start = async () => {
   // Connect before listening so the first request can't hit a cold database.
   await connectDB();
+
+  // One-off data fix-ups, safe to re-run on every boot.
+  const migrated = await migrateLegacyHoldTodos();
+  if (migrated > 0) logger.info(`Migrated ${migrated} "hold" todos`);
 
   const server = createApp().listen(config.port, () => {
     logger.info(`Server listening on port ${config.port} (${config.env})`);

@@ -92,6 +92,44 @@ const midnightIn = (
   return new Date(guess - offsetAt(first, timeZone));
 };
 
+const DAY_MS = 86_400_000;
+
+/** Days since 1970-01-01 of `date`'s calendar day in `timeZone`. */
+const dayIndex = (date: Date, timeZone: string): number => {
+  const { year, month, day } = wallClock(date, timeZone);
+  return Date.UTC(year, month - 1, day) / DAY_MS;
+};
+
+/**
+ * A sequential number for the recurrence cycle `date` falls in, in
+ * `timeZone`: consecutive days, Monday-based weeks or months differ by 1.
+ * Streaks are runs of consecutive cycle numbers.
+ */
+export const cycleIndex = (
+  date: Date,
+  type: RecurrenceType,
+  timeZone: string,
+): number => {
+  switch (type) {
+    case "weekly":
+      // 1970-01-01 was a Thursday; +3 makes every week start on a Monday.
+      return Math.floor((dayIndex(date, timeZone) + 3) / 7);
+    case "monthly": {
+      const { year, month } = wallClock(date, timeZone);
+      return year * 12 + (month - 1);
+    }
+    case "daily":
+    case "none":
+      return dayIndex(date, timeZone);
+  }
+};
+
+/** `YYYY-MM-DD` of `date`'s calendar day in `timeZone`. */
+export const localDateKey = (date: Date, timeZone: string): string => {
+  const { year, month, day } = wallClock(date, timeZone);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
 /**
  * When a recurring item last completed at `lastCompletedAt` becomes due again.
  *
