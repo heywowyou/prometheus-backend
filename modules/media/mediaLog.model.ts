@@ -1,5 +1,9 @@
 import { Schema, model, type Model } from "mongoose";
 import type { UserItemBase } from "../../core/domain";
+import {
+  METADATA_PROVIDERS,
+  type ExternalRef,
+} from "../metadata/metadata.types";
 
 export const MEDIA_LOG_TYPES = [
   "movie",
@@ -38,8 +42,20 @@ export interface IMediaLog extends UserItemBase {
   author?: string;
   pages?: number;
   artist?: string;
+  /** Release / first-publication year, from the catalogue or typed in. */
+  releaseYear?: number;
+  /** The catalogue entry this log was filled from, if any. */
+  external?: ExternalRef;
   favorite: boolean;
 }
+
+const ExternalRefSchema = new Schema<ExternalRef>(
+  {
+    provider: { type: String, enum: METADATA_PROVIDERS, required: true },
+    id: { type: String, required: true, maxlength: 100 },
+  },
+  { _id: false },
+);
 
 const MediaLogSchema = new Schema<IMediaLog>(
   {
@@ -65,6 +81,8 @@ const MediaLogSchema = new Schema<IMediaLog>(
     author: { type: String, trim: true },
     pages: { type: Number, min: 1 },
     artist: { type: String, trim: true },
+    releaseYear: { type: Number, min: 1000, max: 3000 },
+    external: { type: ExternalRefSchema },
     favorite: { type: Boolean, default: false },
     userId: { type: String, required: true },
   },

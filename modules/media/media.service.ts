@@ -5,8 +5,15 @@ import MediaLog, {
   type MediaLogStatus,
   type CoverImage,
 } from "./mediaLog.model";
-import { deleteImageQuietly } from "../../core/storage";
-import { ForbiddenError, NotFoundError } from "../../core/errors/AppError";
+import { deleteImageQuietly, importRemoteImage } from "../../core/storage";
+import {
+  AppError,
+  ForbiddenError,
+  NotFoundError,
+  UnprocessableEntityError,
+} from "../../core/errors/AppError";
+import logger from "../../core/logger";
+import type { ExternalRef } from "../metadata/metadata.types";
 
 type MediaLogDoc = HydratedDocument<IMediaLog>;
 
@@ -32,6 +39,35 @@ const ownedPublicId = (
 ): string | undefined => {
   const resolved = resolveCover(cover);
   return resolved?.source === "upload" ? resolved.publicId : undefined;
+};
+
+/**
+ * Makes a cover safe to store: an external URL (pasted, or offered by the
+ * metadata search) is copied into Cloudinary so it can't break later.
+ *
+ * Importing happens here, on save, rather than when the user picks the image,
+ * so cancelling the form never leaves an orphaned upload behind. A cover whose
+ * URL matches the one already stored is kept as is, so editing an old log
+ * doesn't re-download (or fail on) a legacy external link.
+ */
+const storeCover = async (
+  cover: CoverImage | undefined,
+  current?: CoverImage,
+): Promise<{ cover: CoverImage | undefined; imported: boolean }> => {
+  if (!cover || cover.source !== "external") return { cover, imported: false };
+  if (current && current.url === cover.url) return { cover: current, imported: false };
+
+  try {
+    const stored = await importRemoteImage(cover.url);
+    return {
+      cover: { url: stored.url, source: "upload", publicId: stored.publicId },
+      imported: true,
+    };
+  } catch (error) {
+    if (!(error instanceof AppError)) logger.error("Cover import failed", error);
+    const reason = error instanceof AppError ? `: ${error.message}` : "";
+    throw new UnprocessableEntityError(`Couldn't import the cover image${reason}`);
+  }
 };
 
 const findOwned = async (id: string, userId: string): Promise<MediaLogDoc> => {
@@ -63,6 +99,8 @@ export interface CreateMediaLogInput {
   author?: string;
   pages?: number;
   artist?: string;
+  releaseYear?: number;
+  external?: ExternalRef;
 }
 
 /** Type-specific credits, blanked out for types they don't apply to. */
@@ -79,24 +117,41 @@ const creditsFor = (
 export const createLog = async (
   input: CreateMediaLogInput,
   userId: string,
-): Promise<MediaLogDoc> =>
-  MediaLog.create({
-    type: input.type,
-    title: input.title,
-    url: input.url,
-    cover: resolveCover(input.cover),
-    rating: input.rating,
-    review: input.review,
-    date: input.date,
-    status: input.status ?? "finished",
-    ...creditsFor(input.type, input),
-    userId,
-  });
+): Promise<MediaLogDoc> => {
+  const { cover, imported } = await storeCover(resolveCover(input.cover));
+
+  try {
+    return await MediaLog.create({
+      type: input.type,
+      title: input.title,
+      url: input.url,
+      cover,
+      rating: input.rating,
+      review: input.review,
+      date: input.date,
+      status: input.status ?? "finished",
+      releaseYear: input.releaseYear,
+      external: input.external,
+      ...creditsFor(input.type, input),
+      userId,
+    });
+  } catch (error) {
+    // Don't keep an image for a log that was never written.
+    if (imported) await deleteImageQuietly(cover?.publicId);
+    throw error;
+  }
+};
 
 export interface UpdateMediaLogInput
-  extends Partial<Omit<CreateMediaLogInput, "cover">> {
+  extends Partial<
+    Omit<CreateMediaLogInput, "cover" | "releaseYear" | "external">
+  > {
   /** `null` clears the cover; `undefined` leaves it unchanged. */
   cover?: CoverImage | null;
+  /** `null` clears the field; `undefined` leaves it unchanged. */
+  releaseYear?: number | null;
+  /** `null` unlinks the log from its catalogue entry. */
+  external?: ExternalRef | null;
 }
 
 export const updateLog = async (
@@ -113,16 +168,25 @@ export const updateLog = async (
   if (input.review !== undefined) log.review = input.review || undefined;
   if (input.date !== undefined) log.date = input.date;
   if (input.status !== undefined) log.status = input.status;
+  if (input.releaseYear !== undefined) {
+    log.releaseYear = input.releaseYear ?? undefined;
+  }
+  if (input.external !== undefined) log.external = input.external ?? undefined;
 
   if (input.cover !== undefined) {
+    const current = resolveCover(log.cover);
+    const { cover: next } =
+      input.cover === null
+        ? { cover: undefined }
+        : await storeCover(resolveCover(input.cover), current);
+
     // Replacing or clearing an uploaded cover orphans its Cloudinary asset, so
     // clean it up here rather than trusting each client to do it.
-    const previousId = ownedPublicId(log.cover);
-    const nextId = ownedPublicId(input.cover);
-    if (previousId && previousId !== nextId) {
+    const previousId = ownedPublicId(current);
+    if (previousId && previousId !== ownedPublicId(next)) {
       await deleteImageQuietly(previousId);
     }
-    log.cover = input.cover === null ? undefined : resolveCover(input.cover);
+    log.cover = next;
     log.markModified("cover");
   }
 
