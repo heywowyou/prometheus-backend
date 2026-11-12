@@ -2,20 +2,37 @@ import Todo from "../todos/todo.model";
 import TodoHistory from "../todos/todo-history.model";
 import MediaLog from "../media/mediaLog.model";
 import Note from "../notes/note.model";
+import Exercise from "../workouts/exercise.model";
+import Routine from "../workouts/routine.model";
+import WorkoutSession from "../workouts/workout-session.model";
 
 /** Bumped whenever the export's shape changes, so an importer can adapt. */
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2;
+
+type ExportedCollection =
+  | "todos"
+  | "todoHistory"
+  | "mediaLogs"
+  | "notes"
+  | "exercises"
+  | "routines"
+  | "workoutSessions";
 
 export interface DataExport {
   app: "prometheus";
   version: number;
   exportedAt: string;
-  counts: Record<"todos" | "todoHistory" | "mediaLogs" | "notes", number>;
+  counts: Record<ExportedCollection, number>;
   todos: unknown[];
   todoHistory: unknown[];
   mediaLogs: unknown[];
   /** Includes archived notes and notes in the trash. */
   notes: unknown[];
+  /** Includes archived exercises. */
+  exercises: unknown[];
+  routines: unknown[];
+  /** Includes a workout still in progress. */
+  workoutSessions: unknown[];
 }
 
 /**
@@ -24,15 +41,20 @@ export interface DataExport {
  */
 export const exportUserData = async (userId: string): Promise<DataExport> => {
   const projection = { __v: 0 };
-  const [todos, todoHistory, mediaLogs, notes] = await Promise.all([
-    Todo.find({ userId }, projection).sort({ createdAt: 1 }).lean(),
-    TodoHistory.find({ userId }, projection).sort({ completedAt: 1 }).lean(),
-    MediaLog.find({ userId }, projection).sort({ date: 1 }).lean(),
-    // plainText/empty are derived from content on save; no need to back them up.
-    Note.find({ userId }, { ...projection, plainText: 0, empty: 0 })
-      .sort({ createdAt: 1 })
-      .lean(),
-  ]);
+  const [todos, todoHistory, mediaLogs, notes, exercises, routines, workoutSessions] =
+    await Promise.all([
+      Todo.find({ userId }, projection).sort({ createdAt: 1 }).lean(),
+      TodoHistory.find({ userId }, projection).sort({ completedAt: 1 }).lean(),
+      MediaLog.find({ userId }, projection).sort({ date: 1 }).lean(),
+      // plainText/empty are derived from content on save; no need to back them up.
+      Note.find({ userId }, { ...projection, plainText: 0, empty: 0 })
+        .sort({ createdAt: 1 })
+        .lean(),
+      // nameKey is derived from name on save.
+      Exercise.find({ userId }, { ...projection, nameKey: 0 }).sort({ createdAt: 1 }).lean(),
+      Routine.find({ userId }, projection).sort({ order: 1 }).lean(),
+      WorkoutSession.find({ userId }, projection).sort({ startedAt: 1 }).lean(),
+    ]);
 
   return {
     app: "prometheus",
@@ -43,10 +65,16 @@ export const exportUserData = async (userId: string): Promise<DataExport> => {
       todoHistory: todoHistory.length,
       mediaLogs: mediaLogs.length,
       notes: notes.length,
+      exercises: exercises.length,
+      routines: routines.length,
+      workoutSessions: workoutSessions.length,
     },
     todos,
     todoHistory,
     mediaLogs,
     notes,
+    exercises,
+    routines,
+    workoutSessions,
   };
 };

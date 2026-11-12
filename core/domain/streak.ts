@@ -1,4 +1,4 @@
-import { cycleIndex, type RecurrenceType } from "../../core/domain";
+import { cycleIndex, type RecurrenceType } from "./recurrence";
 
 export interface Streak {
   /** Consecutive cycles completed, up to this one (or the last, if this one is still open). */

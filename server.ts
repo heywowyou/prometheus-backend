@@ -13,6 +13,7 @@ import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
 import { metadataRoutes } from "./modules/metadata";
 import { exportRoutes } from "./modules/export";
+import { workoutRoutes } from "./modules/workouts";
 
 export const createApp = () => {
   const app = express();
@@ -35,6 +36,7 @@ export const createApp = () => {
   app.use("/api/media", mediaLogRoutes);
   app.use("/api/images", imageRoutes);
   app.use("/api/notes", noteRoutes);
+  app.use("/api/workouts", workoutRoutes);
   app.use("/api/metadata", metadataRoutes);
   app.use("/api/export", exportRoutes);
 
