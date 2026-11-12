@@ -220,9 +220,17 @@ export const createTodo = async (
   userId: string,
   timeZone: string,
 ): Promise<TodoView> => {
+  const recurrenceType = input.recurrenceType ?? "none";
+  // New tasks go to the bottom of their section.
+  const last = await Todo.findOne({ userId, recurrenceType, order: { $ne: null } })
+    .sort({ order: -1 })
+    .select({ order: 1 })
+    .lean();
+
   const todo = new Todo({
     text: input.text,
     userId,
+    order: (last?.order ?? -1) + 1,
     recurrenceType: input.recurrenceType ?? "none",
     interactionType: input.interactionType ?? "checkbox",
     durationGoal: input.durationGoal ?? 0,
@@ -337,6 +345,21 @@ export const toggleTodo = async (
 
   await todo.save();
   return viewOf(todo, timeZone, now);
+};
+
+/**
+ * Saves a section's manual order: `ids[i]` gets position `i`. Every id must
+ * belong to the caller, so a crafted list can't touch other users' todos.
+ */
+export const reorderTodos = async (userId: string, ids: string[]): Promise<void> => {
+  const owned = await Todo.countDocuments({ _id: { $in: ids }, userId });
+  if (owned !== ids.length) throw new NotFoundError("Todo");
+
+  await Todo.bulkWrite(
+    ids.map((id, index) => ({
+      updateOne: { filter: { _id: id, userId }, update: { $set: { order: index } } },
+    })),
+  );
 };
 
 export const TIMER_ACTIONS = ["start", "pause", "reset"] as const;

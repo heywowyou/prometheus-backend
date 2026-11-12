@@ -83,6 +83,18 @@ export const toggleTodo = asyncHandler(async (req, res) => {
   res.status(200).json(todo);
 });
 
+export const reorderTodos = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(b.ids) || b.ids.length === 0 || b.ids.length > 500) {
+    throw new BadRequestError("ids must be a non-empty array of up to 500 todo ids");
+  }
+  const ids = b.ids.map((id, index) => asRequiredString(id, `ids[${index}]`, { maxLength: 40 }));
+  if (new Set(ids).size !== ids.length) throw new BadRequestError("ids must be unique");
+
+  await TodoService.reorderTodos(getUserId(req), ids);
+  res.status(204).send();
+});
+
 export const updateTimer = asyncHandler(async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   const action = asEnum(b.action, "action", TodoService.TIMER_ACTIONS);
