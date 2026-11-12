@@ -211,6 +211,8 @@ export interface CreateTodoInput {
   recurrenceType?: RecurrenceType;
   interactionType?: InteractionType;
   durationGoal?: number;
+  /** One-time tasks only; ignored for recurring ones. */
+  dueDate?: string;
 }
 
 export const createTodo = async (
@@ -224,13 +226,19 @@ export const createTodo = async (
     recurrenceType: input.recurrenceType ?? "none",
     interactionType: input.interactionType ?? "checkbox",
     durationGoal: input.durationGoal ?? 0,
+    ...(input.recurrenceType && input.recurrenceType !== "none"
+      ? {}
+      : { dueDate: input.dueDate }),
   });
   assertValidMode(todo);
   await todo.save();
   return viewOf(todo, timeZone);
 };
 
-export type UpdateTodoInput = Partial<CreateTodoInput>;
+export type UpdateTodoInput = Partial<Omit<CreateTodoInput, "dueDate">> & {
+  /** `null` clears the due date. */
+  dueDate?: string | null;
+};
 
 export const updateTodo = async (
   id: string,
@@ -262,6 +270,10 @@ export const updateTodo = async (
     }
     todo.recurrenceType = input.recurrenceType;
   }
+
+  if (input.dueDate !== undefined) todo.dueDate = input.dueDate ?? undefined;
+  // Recurring tasks are due every cycle; a fixed date would only mislead.
+  if (todo.recurrenceType !== "none") todo.dueDate = undefined;
 
   await todo.save();
   return viewOf(todo, timeZone, now);
