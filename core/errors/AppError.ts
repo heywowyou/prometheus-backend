@@ -56,3 +56,17 @@ export class UnprocessableEntityError extends AppError {
     super(422, "UNPROCESSABLE_ENTITY", message);
   }
 }
+
+/** A third-party service we depend on failed or returned something unusable. */
+export class UpstreamError extends AppError {
+  constructor(message: string) {
+    super(502, "UPSTREAM_ERROR", message);
+  }
+}
+
+/** A feature is switched off, e.g. because its credentials aren't configured. */
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string) {
+    super(503, "SERVICE_UNAVAILABLE", message);
+  }
+}

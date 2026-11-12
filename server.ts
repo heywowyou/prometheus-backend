@@ -11,6 +11,7 @@ import { todoRoutes } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
+import { metadataRoutes } from "./modules/metadata";
 
 export const createApp = () => {
   const app = express();
@@ -33,6 +34,7 @@ export const createApp = () => {
   app.use("/api/media", mediaLogRoutes);
   app.use("/api/images", imageRoutes);
   app.use("/api/notes", noteRoutes);
+  app.use("/api/metadata", metadataRoutes);
 
   // Must come after every route: unmatched paths become a 404, and all thrown
   // or rejected handlers land in one place.

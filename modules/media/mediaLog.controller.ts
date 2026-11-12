@@ -15,6 +15,10 @@ import {
   COVER_SOURCES,
   type CoverImage,
 } from "./mediaLog.model";
+import {
+  METADATA_PROVIDERS,
+  type ExternalRef,
+} from "../metadata/metadata.types";
 import * as MediaService from "./media.service";
 
 /** Accepts either the structured cover or a bare URL string from older clients. */
@@ -33,6 +37,23 @@ const parseCover = (value: unknown): CoverImage | null => {
   const publicId = asString(c.publicId, "cover.publicId");
   return { url, source, ...(publicId ? { publicId } : {}) };
 };
+
+const parseExternal = (value: unknown): ExternalRef | null => {
+  if (value === null || value === "") return null;
+  if (typeof value !== "object") {
+    throw new BadRequestError("external must be an object or null");
+  }
+  const e = value as Record<string, unknown>;
+  const provider = asEnum(e.provider, "external.provider", METADATA_PROVIDERS);
+  const id = asString(e.id, "external.id", { maxLength: 100 });
+  if (!provider || !id) {
+    throw new BadRequestError("external needs a provider and an id");
+  }
+  return { provider, id };
+};
+
+const parseReleaseYear = (value: unknown) =>
+  asNumber(value, "releaseYear", { min: 1000, max: 3000, integer: true });
 
 const parseCredits = (b: Record<string, unknown>) => ({
   director: asString(b.director, "director", { maxLength: 200 }),
@@ -67,6 +88,8 @@ export const createMediaLog = asyncHandler(async (req, res) => {
       cover: parseCover(b.cover) ?? undefined,
       review: asString(b.review, "review", { maxLength: 10_000 }),
       status: asEnum(b.status, "status", MEDIA_LOG_STATUSES),
+      releaseYear: parseReleaseYear(b.releaseYear),
+      external: parseExternal(b.external) ?? undefined,
       ...parseCredits(b),
     },
     getUserId(req),
@@ -91,6 +114,11 @@ export const updateMediaLog = asyncHandler(async (req, res) => {
       ...(supplied(b, "cover") ? { cover: parseCover(b.cover) } : {}),
       review: asString(b.review, "review", { maxLength: 10_000 }),
       status: asEnum(b.status, "status", MEDIA_LOG_STATUSES),
+      // Like the cover, these can be cleared, so `null` must reach the service.
+      ...(supplied(b, "releaseYear")
+        ? { releaseYear: parseReleaseYear(b.releaseYear) ?? null }
+        : {}),
+      ...(supplied(b, "external") ? { external: parseExternal(b.external) } : {}),
       ...parseCredits(b),
     },
   );

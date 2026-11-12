@@ -44,6 +44,11 @@ export const config = {
    * fallback for scripts and older clients.
    */
   timeZone: optional("APP_TIMEZONE", "UTC"),
+  /**
+   * TMDB read access token for movie/TV metadata. Optional so the API still
+   * boots without it; movie and TV lookups then answer 503.
+   */
+  tmdbReadToken: optional("TMDB_READ_TOKEN", ""),
 } as const;
 
 export const isProduction = config.env === "production";
