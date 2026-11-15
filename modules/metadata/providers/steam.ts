@@ -1,6 +1,9 @@
+import config from "../../../core/config";
 import { NotFoundError } from "../../../core/errors/AppError";
-import { getJson, imageExists, MAX_RESULTS, parseYear } from "../http";
+import logger from "../../../core/logger";
+import { getJson, imageExists, MAX_RESULTS, parseYear, uniqueCovers } from "../http";
 import type {
+  CoverOption,
   MetadataAdapter,
   MetadataCandidate,
   MetadataDetails,
@@ -33,6 +36,49 @@ const NOT_A_GAME = /\b(soundtrack|ost|artbook|art book|demo|playtest|dlc|season 
 /** Portrait box art (2:3), matching the games panel's cover shape. */
 const portrait = (id: string) =>
   `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${id}/library_600x900.jpg`;
+
+const header = (id: string) =>
+  `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${id}/header.jpg`;
+
+interface SteamGridDbGrid {
+  url?: string;
+  thumb?: string;
+  style?: string;
+  author?: { name?: string };
+}
+
+/**
+ * Community box art from SteamGridDB, portrait sizes only. Optional: needs
+ * STEAMGRIDDB_API_KEY, and a failure there must not hide Steam's own art.
+ */
+const steamGridDbGrids = async (id: string): Promise<CoverOption[]> => {
+  if (!config.steamGridDbKey) return [];
+  const params = new URLSearchParams({
+    dimensions: "600x900,342x482,660x930",
+    types: "static",
+    nsfw: "false",
+    humor: "false",
+  });
+  try {
+    const data = await getJson<{ data?: SteamGridDbGrid[] }>(
+      `https://www.steamgriddb.com/api/v2/grids/steam/${id}?${params.toString()}`,
+      "SteamGridDB",
+      { authorization: `Bearer ${config.steamGridDbKey}` },
+    );
+    return (data.data ?? [])
+      .filter((grid) => grid.url)
+      .map((grid) => ({
+        url: grid.url as string,
+        thumbnailUrl: grid.thumb || (grid.url as string),
+        label: [grid.style && grid.style !== "alternate" ? grid.style : undefined, grid.author?.name]
+          .filter(Boolean)
+          .join(" · ") || undefined,
+      }));
+  } catch (error) {
+    logger.warn(`SteamGridDB grids failed for app ${id}`, error);
+    return [];
+  }
+};
 
 /**
  * Steam store — no key needed. These are the public endpoints the store page
@@ -87,5 +133,18 @@ export const steam: MetadataAdapter = {
       url: `https://store.steampowered.com/app/${id}`,
       credits: {},
     };
+  },
+
+  /**
+   * Steam itself has a single portrait cover per game (the wide header only
+   * when there is none), so most alternatives come from SteamGridDB.
+   */
+  async covers(id): Promise<CoverOption[]> {
+    const tall = portrait(id);
+    const [hasPortrait, grids] = await Promise.all([imageExists(tall), steamGridDbGrids(id)]);
+    const own: CoverOption = hasPortrait
+      ? { url: tall, thumbnailUrl: tall, label: "Steam" }
+      : { url: header(id), thumbnailUrl: header(id), label: "Steam header" };
+    return uniqueCovers([own, ...grids]);
   },
 };

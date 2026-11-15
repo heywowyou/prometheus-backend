@@ -5,9 +5,10 @@ import Note from "../notes/note.model";
 import Exercise from "../workouts/exercise.model";
 import Routine from "../workouts/routine.model";
 import WorkoutSession from "../workouts/workout-session.model";
+import Profile from "../profile/profile.model";
 
 /** Bumped whenever the export's shape changes, so an importer can adapt. */
-export const EXPORT_VERSION = 2;
+export const EXPORT_VERSION = 3;
 
 type ExportedCollection =
   | "todos"
@@ -33,6 +34,8 @@ export interface DataExport {
   routines: unknown[];
   /** Includes a workout still in progress. */
   workoutSessions: unknown[];
+  /** Top picks per media type (ids of `mediaLogs`), or null if never set. */
+  profile: unknown;
 }
 
 /**
@@ -41,7 +44,7 @@ export interface DataExport {
  */
 export const exportUserData = async (userId: string): Promise<DataExport> => {
   const projection = { __v: 0 };
-  const [todos, todoHistory, mediaLogs, notes, exercises, routines, workoutSessions] =
+  const [todos, todoHistory, mediaLogs, notes, exercises, routines, workoutSessions, profile] =
     await Promise.all([
       Todo.find({ userId }, projection).sort({ createdAt: 1 }).lean(),
       TodoHistory.find({ userId }, projection).sort({ completedAt: 1 }).lean(),
@@ -54,6 +57,7 @@ export const exportUserData = async (userId: string): Promise<DataExport> => {
       Exercise.find({ userId }, { ...projection, nameKey: 0 }).sort({ createdAt: 1 }).lean(),
       Routine.find({ userId }, projection).sort({ order: 1 }).lean(),
       WorkoutSession.find({ userId }, projection).sort({ startedAt: 1 }).lean(),
+      Profile.findOne({ userId }, projection).lean(),
     ]);
 
   return {
@@ -76,5 +80,6 @@ export const exportUserData = async (userId: string): Promise<DataExport> => {
     exercises,
     routines,
     workoutSessions,
+    profile,
   };
 };

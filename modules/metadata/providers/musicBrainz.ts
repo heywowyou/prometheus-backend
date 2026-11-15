@@ -1,5 +1,13 @@
-import { createThrottle, getJson, imageExists, MAX_RESULTS, parseYear } from "../http";
+import {
+  createThrottle,
+  getJson,
+  imageExists,
+  MAX_RESULTS,
+  parseYear,
+  uniqueCovers,
+} from "../http";
 import type {
+  CoverOption,
   MetadataAdapter,
   MetadataCandidate,
   MetadataDetails,
@@ -35,6 +43,23 @@ const escapeLucene = (text: string) =>
 
 const coverArt = (id: string, size: 250 | 500) =>
   `https://coverartarchive.org/release-group/${id}/front-${size}`;
+
+interface Release {
+  id: string;
+  date?: string;
+  country?: string;
+  media?: Array<{ format?: string | null }>;
+  "cover-art-archive"?: { front?: boolean };
+}
+
+const releaseArt = (id: string, size: 250 | 500) =>
+  `https://coverartarchive.org/release/${id}/front-${size}`;
+
+/** "Vinyl · 1997 · GB": what usually explains a different sleeve. */
+const releaseLabel = (release: Release) =>
+  [release.media?.[0]?.format, parseYear(release.date), release.country]
+    .filter(Boolean)
+    .join(" · ") || undefined;
 
 /** Logs are for albums; singles and compilations-of-one would only be noise. */
 const ALBUM_TYPES = new Set(["Album", "EP"]);
@@ -99,5 +124,41 @@ export const musicBrainz: MetadataAdapter = {
       url: `https://musicbrainz.org/release-group/${id}`,
       credits: { artist: artistName(group["artist-credit"]) },
     };
+  },
+
+  /**
+   * The release group's chosen art, then the front cover of every release
+   * (pressings, reissues, deluxe editions) that has one. Many releases share
+   * the same sleeve; Cover Art Archive gives no way to tell without
+   * downloading them, so repeats are possible.
+   */
+  async covers(id): Promise<CoverOption[]> {
+    const params = new URLSearchParams({
+      "release-group": id,
+      inc: "media",
+      fmt: "json",
+      limit: "100",
+    });
+    const [data, hasGroupArt] = await Promise.all([
+      throttled(() =>
+        getJson<{ releases?: Release[] }>(`${API}/release?${params.toString()}`, LABEL),
+      ),
+      imageExists(coverArt(id, 500)),
+    ]);
+
+    const releases = (data.releases ?? [])
+      .filter((release) => release["cover-art-archive"]?.front)
+      .sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999"));
+
+    return uniqueCovers([
+      ...(hasGroupArt
+        ? [{ url: coverArt(id, 500), thumbnailUrl: coverArt(id, 250), label: "Default" }]
+        : []),
+      ...releases.map((release) => ({
+        url: releaseArt(release.id, 500),
+        thumbnailUrl: releaseArt(release.id, 250),
+        label: releaseLabel(release),
+      })),
+    ]);
   },
 };

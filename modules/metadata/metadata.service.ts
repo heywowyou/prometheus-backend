@@ -2,6 +2,7 @@ import { BadRequestError } from "../../core/errors/AppError";
 import type { MediaLogType } from "../media/mediaLog.model";
 import { TtlCache } from "./http";
 import type {
+  CoverOption,
   MetadataAdapter,
   MetadataCandidate,
   MetadataDetails,
@@ -35,6 +36,7 @@ const MIN_QUERY_LENGTH = 2;
 // The caches also keep us well inside MusicBrainz's 1 req/s limit.
 const searchCache = new TtlCache<MetadataCandidate[]>(60 * 60_000, 500);
 const detailsCache = new TtlCache<MetadataDetails>(24 * 60 * 60_000, 500);
+const coversCache = new TtlCache<CoverOption[]>(6 * 60 * 60_000, 200);
 
 export const searchMetadata = async (
   type: MediaLogType,
@@ -70,4 +72,23 @@ export const getMetadataDetails = async (
   const details = await adapter.details(id);
   detailsCache.set(key, details);
   return details;
+};
+
+/** Alternative covers for the picker, from the entry's own catalogue. */
+export const getCoverOptions = async (
+  provider: MetadataProvider,
+  id: string,
+): Promise<CoverOption[]> => {
+  const adapter = ADAPTERS[provider];
+  if (!adapter.idPattern.test(id)) {
+    throw new BadRequestError(`Invalid ${adapter.label} id`);
+  }
+
+  const key = `${provider}:${id}`;
+  const cached = coversCache.get(key);
+  if (cached) return cached;
+
+  const covers = await adapter.covers(id);
+  coversCache.set(key, covers);
+  return covers;
 };

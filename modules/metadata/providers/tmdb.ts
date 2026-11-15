@@ -1,7 +1,7 @@
 import config from "../../../core/config";
 import { ServiceUnavailableError } from "../../../core/errors/AppError";
-import { getJson, MAX_RESULTS, parseYear } from "../http";
-import type { MetadataAdapter, MetadataDetails } from "../metadata.types";
+import { getJson, MAX_RESULTS, parseYear, uniqueCovers } from "../http";
+import type { CoverOption, MetadataAdapter, MetadataDetails } from "../metadata.types";
 
 const API = "https://api.themoviedb.org/3";
 const IMAGES = "https://image.tmdb.org/t/p";
@@ -29,6 +29,12 @@ interface TmdbShow {
   created_by?: Array<{ name?: string }>;
 }
 
+interface TmdbImage {
+  file_path?: string;
+  /** "en", "fr"… or null for a textless poster. */
+  iso_639_1?: string | null;
+}
+
 const get = <T>(path: string, params: Record<string, string> = {}) => {
   if (!config.tmdbReadToken) {
     throw new ServiceUnavailableError(
@@ -43,6 +49,33 @@ const get = <T>(path: string, params: Record<string, string> = {}) => {
 
 const poster = (path: string | null | undefined, size: "w185" | "w500") =>
   path ? `${IMAGES}/${size}${path}` : undefined;
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  fr: "French",
+};
+
+/**
+ * Every poster TMDB has, in its own order (most voted first). Limited to
+ * English, French and textless ones: the rest are mostly regional prints the
+ * picker would only be cluttered by.
+ */
+const posters = async (kind: "movie" | "tv", id: string): Promise<CoverOption[]> => {
+  const data = await get<{ posters?: TmdbImage[] }>(`/${kind}/${id}/images`, {
+    include_image_language: "en,fr,null",
+  });
+  return uniqueCovers(
+    (data.posters ?? [])
+      .filter((image) => image.file_path)
+      .map((image) => ({
+        url: poster(image.file_path, "w500") as string,
+        thumbnailUrl: poster(image.file_path, "w185") as string,
+        label: image.iso_639_1
+          ? (LANGUAGE_NAMES[image.iso_639_1] ?? image.iso_639_1.toUpperCase())
+          : "No text",
+      })),
+  );
+};
 
 /** Only show the original title when it differs, e.g. for foreign films. */
 const originalIfDifferent = (title?: string, original?: string) =>
@@ -86,6 +119,8 @@ export const tmdbMovies: MetadataAdapter = {
       credits: { director: directors.join(", ") || undefined },
     };
   },
+
+  covers: (id) => posters("movie", id),
 };
 
 export const tmdbShows: MetadataAdapter = {
@@ -118,4 +153,6 @@ export const tmdbShows: MetadataAdapter = {
       credits: {},
     };
   },
+
+  covers: (id) => posters("tv", id),
 };

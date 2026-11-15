@@ -25,3 +25,14 @@ export const getMetadataDetails = asyncHandler(async (req, res) => {
   );
   res.status(200).json(details);
 });
+
+export const getCoverOptions = asyncHandler(async (req, res) => {
+  const provider = asEnum(req.params.provider, "provider", METADATA_PROVIDERS);
+  if (!provider) throw new BadRequestError("provider is required");
+
+  const covers = await MetadataService.getCoverOptions(
+    provider,
+    String(req.params.id),
+  );
+  res.status(200).json(covers);
+});

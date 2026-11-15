@@ -51,6 +51,16 @@ export interface MetadataDetails {
   credits: MetadataCredits;
 }
 
+/** One alternative cover offered by the cover picker. */
+export interface CoverOption {
+  /** Full-size image. The media service copies it to Cloudinary on save. */
+  url: string;
+  /** Smaller image for the picker grid. */
+  thumbnailUrl: string;
+  /** What distinguishes this one: language, edition, release, style… */
+  label?: string;
+}
+
 export interface MetadataAdapter {
   provider: MetadataProvider;
   /** Shown in errors and in the UI attribution. */
@@ -59,4 +69,6 @@ export interface MetadataAdapter {
   idPattern: RegExp;
   search(query: string): Promise<MetadataCandidate[]>;
   details(id: string): Promise<MetadataDetails>;
+  /** Every cover the catalogue knows for the entry, best first. */
+  covers(id: string): Promise<CoverOption[]>;
 }

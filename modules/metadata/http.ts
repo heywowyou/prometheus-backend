@@ -9,6 +9,21 @@ export const USER_AGENT = "Prometheus/1.0 (personal media log)";
 /** Max results returned to the dropdown, per search. */
 export const MAX_RESULTS = 8;
 
+/** Max alternatives returned to the cover picker. */
+export const MAX_COVER_OPTIONS = 40;
+
+/** Drops repeated URLs (keeping the first) and caps the list. */
+export const uniqueCovers = <T extends { url: string }>(options: T[]): T[] => {
+  const seen = new Set<string>();
+  return options
+    .filter((option) => {
+      if (seen.has(option.url)) return false;
+      seen.add(option.url);
+      return true;
+    })
+    .slice(0, MAX_COVER_OPTIONS);
+};
+
 /**
  * GETs JSON from a metadata source.
  *

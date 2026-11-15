@@ -49,6 +49,11 @@ export const config = {
    * boots without it; movie and TV lookups then answer 503.
    */
   tmdbReadToken: optional("TMDB_READ_TOKEN", ""),
+  /**
+   * SteamGridDB API key. Optional: without it the game cover picker only
+   * offers Steam's own box art.
+   */
+  steamGridDbKey: optional("STEAMGRIDDB_API_KEY", ""),
 } as const;
 
 export const isProduction = config.env === "production";
