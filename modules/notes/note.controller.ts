@@ -4,9 +4,15 @@ import {
   asBoolean,
   asEnum,
   asyncHandler,
+  supplied,
 } from "../../core/http";
 import { BadRequestError } from "../../core/errors/AppError";
-import { NOTE_FONT_FAMILIES, NOTE_VIEWS } from "./note.model";
+import {
+  DAILY_DATE_PATTERN,
+  NOTE_FONT_FAMILIES,
+  NOTE_VIEWS,
+  type NoteCover,
+} from "./note.model";
 import * as NoteService from "./note.service";
 
 const parseTags = (value: unknown): string[] | undefined => {
@@ -15,12 +21,35 @@ const parseTags = (value: unknown): string[] | undefined => {
   return value.map((tag, index) => asString(tag, `tags[${index}]`, { maxLength: 60 }) ?? "");
 };
 
+/** `null` or "" clears the cover; absent leaves it alone. */
+const parseCover = (value: unknown): NoteCover | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value !== "object") throw new BadRequestError("cover must be an object or null");
+  const c = value as Record<string, unknown>;
+  const url = asString(c.url, "cover.url", { maxLength: 2000 });
+  if (!url) return null;
+  if (!/^(https:\/\/|linear-gradient\()/.test(url)) {
+    throw new BadRequestError("cover.url must be an https URL or a gradient");
+  }
+  const publicId = asString(c.publicId, "cover.publicId", { maxLength: 300 });
+  return { url, ...(publicId ? { publicId } : {}) };
+};
+
+/** A string id, `null` for the top level, or undefined when absent. */
+const parseParentId = (body: Record<string, unknown>): string | null | undefined => {
+  if (!supplied(body, "parentId")) return undefined;
+  if (body.parentId === null || body.parentId === "") return null;
+  return asString(body.parentId, "parentId", { maxLength: 24 });
+};
+
 const parseFields = (b: Record<string, unknown>) => ({
   title: asString(b.title, "title", { maxLength: 300 }),
   // Note bodies keep their leading whitespace.
   content: asString(b.content, "content", { trim: false }),
   tags: parseTags(b.tags),
   fontFamily: asEnum(b.fontFamily, "fontFamily", NOTE_FONT_FAMILIES),
+  icon: asString(b.icon, "icon", { maxLength: 16 }),
 });
 
 export const listNotes = asyncHandler(async (req, res) => {
@@ -37,6 +66,10 @@ export const listNotes = asyncHandler(async (req, res) => {
   res.status(200).json(notes);
 });
 
+export const getIndex = asyncHandler(async (req, res) => {
+  res.status(200).json(await NoteService.getIndex(getUserId(req)));
+});
+
 export const listTags = asyncHandler(async (req, res) => {
   res.status(200).json(await NoteService.listTags(getUserId(req)));
 });
@@ -48,7 +81,15 @@ export const getNote = asyncHandler(async (req, res) => {
 
 export const createNote = asyncHandler(async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
-  const note = await NoteService.createNote(parseFields(b), getUserId(req));
+  const note = await NoteService.createNote(
+    {
+      ...parseFields(b),
+      parentId: parseParentId(b),
+      templateId: asString(b.templateId, "templateId", { maxLength: 24 }),
+      isTemplate: asBoolean(b.isTemplate, "isTemplate"),
+    },
+    getUserId(req),
+  );
   res.status(201).json(note);
 });
 
@@ -61,9 +102,23 @@ export const updateNote = asyncHandler(async (req, res) => {
       ...parseFields(b),
       pinned: asBoolean(b.pinned, "pinned"),
       archived: asBoolean(b.archived, "archived"),
+      cover: parseCover(b.cover),
+      parentId: parseParentId(b),
+      isTemplate: asBoolean(b.isTemplate, "isTemplate"),
+      isDailyTemplate: asBoolean(b.isDailyTemplate, "isDailyTemplate"),
     },
   );
   res.status(200).json(note);
+});
+
+export const reorderNotes = asyncHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(b.ids) || b.ids.length > 500) {
+    throw new BadRequestError("ids must be an array of at most 500 ids");
+  }
+  const ids = b.ids.map((id, index) => asString(id, `ids[${index}]`, { maxLength: 24 }) ?? "");
+  await NoteService.reorderNotes(getUserId(req), parseParentId(b) ?? null, ids);
+  res.status(200).json({ ok: true });
 });
 
 export const duplicateNote = asyncHandler(async (req, res) => {
@@ -94,4 +149,47 @@ export const deleteNote = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json(await NoteService.trashNote(id, userId));
+});
+
+/** The daily note for `:date`, created on first open. The client names it in its own language. */
+export const getDaily = asyncHandler(async (req, res) => {
+  const date = String(req.params.date);
+  if (!DAILY_DATE_PATTERN.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime())) {
+    throw new BadRequestError("date must be YYYY-MM-DD");
+  }
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const title = asString(b.title, "title", { maxLength: 300 }) || date;
+  res.status(200).json(await NoteService.getOrCreateDaily(getUserId(req), date, title));
+});
+
+export const getBacklinks = asyncHandler(async (req, res) => {
+  res.status(200).json(await NoteService.getBacklinks(String(req.params.id), getUserId(req)));
+});
+
+export const listVersions = asyncHandler(async (req, res) => {
+  res.status(200).json(await NoteService.listVersions(String(req.params.id), getUserId(req)));
+});
+
+export const getVersion = asyncHandler(async (req, res) => {
+  res
+    .status(200)
+    .json(
+      await NoteService.getVersion(
+        String(req.params.id),
+        String(req.params.versionId),
+        getUserId(req),
+      ),
+    );
+});
+
+export const restoreVersion = asyncHandler(async (req, res) => {
+  res
+    .status(200)
+    .json(
+      await NoteService.restoreVersion(
+        String(req.params.id),
+        String(req.params.versionId),
+        getUserId(req),
+      ),
+    );
 });

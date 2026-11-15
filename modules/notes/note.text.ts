@@ -65,3 +65,26 @@ export const normaliseTags = (tags: string[]): string[] => [
 /** Escapes user text for use inside a RegExp. */
 export const escapeRegExp = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Attribute the editor writes on an inline link to another note. */
+export const NOTE_LINK_ATTRIBUTE = "data-note-id";
+
+/** Distinct ids of the notes a note's HTML links to, in order of appearance. */
+export const extractNoteLinks = (html: string): string[] => {
+  const ids = new Set<string>();
+  const pattern = new RegExp(`${NOTE_LINK_ATTRIBUTE}="([a-f0-9]{24})"`, "gi");
+  for (const match of html.matchAll(pattern)) {
+    if (match[1]) ids.add(match[1].toLowerCase());
+  }
+  return [...ids];
+};
+
+/** Up to `radius` characters either side of the first match of `needle`, on one line. */
+export const snippetAround = (text: string, needle: string, radius = 80): string | null => {
+  const flat = text.replace(/\s+/g, " ");
+  const index = flat.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return null;
+  const start = Math.max(0, index - radius);
+  const end = Math.min(flat.length, index + needle.length + radius);
+  return `${start > 0 ? "…" : ""}${flat.slice(start, end).trim()}${end < flat.length ? "…" : ""}`;
+};
