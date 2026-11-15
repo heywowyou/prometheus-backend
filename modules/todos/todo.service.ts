@@ -1,10 +1,14 @@
-import type { HydratedDocument, Types } from "mongoose";
+import { Types, type HydratedDocument } from "mongoose";
 import Todo, { type ITodo, type InteractionType } from "./todo.model";
 import TodoHistory from "./todo-history.model";
+import { TodoArea, TodoProject } from "./todo-list.model";
+import { advanceRepeat, addDays, daysBetween, DAY_PATTERN, type RepeatRule } from "./repeat";
+import { normaliseTags } from "../notes/note.text";
 import { computeStreak, type Streak } from "../../core/domain";
 import {
   getNextResetTime,
   localDateKey,
+  zonedInstant,
   type RecurrenceType,
 } from "../../core/domain";
 import {
@@ -176,12 +180,22 @@ export const listTodos = async (
   userId: string,
   opts: { paused?: boolean; timeZone: string },
 ): Promise<TodoView[]> => {
+  const now = new Date();
+  // Done tasks stay in their lists until the end of the day, then live in the Logbook.
+  const startOfToday = zonedInstant(localDateKey(now, opts.timeZone), "00:00", opts.timeZone);
   const filter = opts.paused
     ? { userId, paused: true }
-    : { userId, paused: { $ne: true } };
+    : {
+        userId,
+        paused: { $ne: true },
+        $or: [
+          { recurrenceType: { $ne: "none" as const } },
+          { completedAt: null },
+          { completedAt: { $gte: startOfToday } },
+        ],
+      };
 
   const todos = await Todo.find(filter).sort({ createdAt: -1 });
-  const now = new Date();
 
   const recurring = todos.filter((todo) => todo.recurrenceType !== "none");
   const completions = await completionsByTodo(
@@ -206,7 +220,22 @@ export const listTodos = async (
   );
 };
 
-export interface CreateTodoInput {
+/** Fields only tasks use (habits ignore the schedule ones). `null` clears. */
+export interface TaskFieldsInput {
+  notes?: string;
+  checklist?: Array<{ _id?: string; text: string; done: boolean }>;
+  areaId?: string | null;
+  projectId?: string | null;
+  headingId?: string | null;
+  tags?: string[];
+  important?: boolean;
+  when?: string | null;
+  evening?: boolean;
+  time?: string | null;
+  repeat?: RepeatRule | null;
+}
+
+export interface CreateTodoInput extends TaskFieldsInput {
   text: string;
   recurrenceType?: RecurrenceType;
   interactionType?: InteractionType;
@@ -215,13 +244,126 @@ export interface CreateTodoInput {
   dueDate?: string;
 }
 
+const isDay = (value: string | null | undefined): boolean =>
+  typeof value === "string" && DAY_PATTERN.test(value);
+
+const assertOwnedList = async (
+  kind: "area" | "project",
+  id: string,
+  userId: string,
+) => {
+  if (!Types.ObjectId.isValid(id)) throw new BadRequestError(`${kind}Id is not a valid id`);
+  const exists =
+    kind === "area"
+      ? await TodoArea.exists({ _id: id, userId })
+      : await TodoProject.exists({ _id: id, userId });
+  if (!exists) throw new NotFoundError(kind === "area" ? "Area" : "Project");
+};
+
+/** Recomputes the reminder instant after `when`, `time` or the zone change. */
+const syncReminder = (todo: TodoDoc) => {
+  const at =
+    todo.recurrenceType === "none" && !todo.completedAt && isDay(todo.when) && todo.time && todo.timeZone
+      ? zonedInstant(todo.when as string, todo.time, todo.timeZone)
+      : null;
+  const changed = (todo.reminderAt?.getTime() ?? null) !== (at?.getTime() ?? null);
+  todo.reminderAt = at;
+  if (changed) todo.reminderSentAt = null;
+};
+
+/**
+ * Applies the task fields of a create or update. Keeps them consistent: a
+ * project and an area are exclusive (the project carries its area), a time
+ * or a repeat needs a start day, someday drops the time.
+ */
+const applyTaskFields = async (
+  todo: TodoDoc,
+  input: TaskFieldsInput,
+  userId: string,
+  timeZone: string,
+) => {
+  const today = localDateKey(new Date(), timeZone);
+
+  if (input.notes !== undefined) todo.notes = input.notes;
+  if (input.tags !== undefined) todo.tags = normaliseTags(input.tags);
+  if (input.important !== undefined) todo.important = input.important;
+  if (input.checklist !== undefined) {
+    todo.set(
+      "checklist",
+      input.checklist.slice(0, 200).map((item) => ({
+        ...(item._id && Types.ObjectId.isValid(item._id) ? { _id: item._id } : {}),
+        text: item.text.slice(0, 500),
+        done: Boolean(item.done),
+      })),
+    );
+  }
+
+  if (input.projectId !== undefined) {
+    if (input.projectId) {
+      await assertOwnedList("project", input.projectId, userId);
+      if (String(todo.projectId) !== input.projectId) todo.headingId = null;
+      todo.projectId = new Types.ObjectId(input.projectId);
+      todo.areaId = null;
+    } else {
+      todo.projectId = null;
+      todo.headingId = null;
+    }
+  }
+  if (input.areaId !== undefined) {
+    if (input.areaId) {
+      await assertOwnedList("area", input.areaId, userId);
+      todo.areaId = new Types.ObjectId(input.areaId);
+      todo.projectId = null;
+      todo.headingId = null;
+    } else {
+      todo.areaId = null;
+    }
+  }
+  if (input.headingId !== undefined) {
+    if (input.headingId) {
+      const project = todo.projectId ? await TodoProject.findOne({ _id: todo.projectId, userId }) : null;
+      if (!project?.headings.some((heading) => String(heading._id) === input.headingId)) {
+        throw new BadRequestError("headingId must be a heading of the task's project");
+      }
+      todo.headingId = new Types.ObjectId(input.headingId);
+    } else {
+      todo.headingId = null;
+    }
+  }
+
+  // Schedule fields only mean something on tasks.
+  if (todo.recurrenceType !== "none") return;
+
+  if (input.when !== undefined) todo.when = input.when;
+  if (input.evening !== undefined) todo.evening = input.evening;
+  if (input.time !== undefined) {
+    todo.time = input.time;
+    if (input.time) todo.timeZone = timeZone;
+  }
+  if (input.repeat !== undefined) todo.repeat = input.repeat;
+
+  if ((todo.time || todo.repeat || todo.evening) && !isDay(todo.when)) {
+    if (todo.when === "someday") {
+      todo.time = null;
+      todo.evening = false;
+    } else {
+      todo.when = today;
+    }
+  }
+  if (!isDay(todo.when)) {
+    todo.evening = false;
+    todo.time = null;
+  }
+  syncReminder(todo);
+};
+
 export const createTodo = async (
   input: CreateTodoInput,
   userId: string,
   timeZone: string,
 ): Promise<TodoView> => {
   const recurrenceType = input.recurrenceType ?? "none";
-  // New tasks go to the bottom of their section.
+  // New tasks go to the bottom of their list.
   const last = await Todo.findOne({ userId, recurrenceType, order: { $ne: null } })
     .sort({ order: -1 })
     .select({ order: 1 })
@@ -239,6 +381,7 @@ export const createTodo = async (
       : { dueDate: input.dueDate }),
   });
   assertValidMode(todo);
+  await applyTaskFields(todo, input, userId, timeZone);
   await todo.save();
   return viewOf(todo, timeZone);
 };
@@ -270,12 +413,13 @@ export const updateTodo = async (
   if (input.durationGoal !== undefined) todo.durationGoal = input.durationGoal;
   assertValidMode(todo);
 
-  if (input.recurrenceType !== undefined && input.recurrenceType !== todo.recurrenceType) {
-    // Dropping recurrence discards the history, which no longer has a meaning.
-    if (input.recurrenceType === "none") {
-      await TodoHistory.deleteMany({ todoId: todo._id });
-      todo.completionCount = 0;
-    }
+  // Switching between a habit and a task goes through convertTodo, which
+  // keeps the history; this only changes a habit's cadence.
+  if (
+    input.recurrenceType !== undefined &&
+    input.recurrenceType !== "none" &&
+    todo.recurrenceType !== "none"
+  ) {
     todo.recurrenceType = input.recurrenceType;
   }
 
@@ -283,6 +427,7 @@ export const updateTodo = async (
   // Recurring tasks are due every cycle; a fixed date would only mislead.
   if (todo.recurrenceType !== "none") todo.dueDate = undefined;
 
+  await applyTaskFields(todo, input, userId, timeZone);
   await todo.save();
   return viewOf(todo, timeZone, now);
 };
@@ -303,6 +448,8 @@ export const toggleTodo = async (
   const todo = await findOwned(id, userId);
   const now = new Date();
   const isRecurring = todo.recurrenceType !== "none";
+
+  if (!isRecurring) return toggleTask(todo, timeZone, now);
 
   if (isCurrentlyComplete(todo, timeZone, now)) {
     todo.completed = false;
@@ -345,6 +492,134 @@ export const toggleTodo = async (
 
   await todo.save();
   return viewOf(todo, timeZone, now);
+};
+
+/**
+ * Completes or reopens a task. A repeating task isn't closed: a done copy
+ * goes to the Logbook and the task moves on to its next day (its deadline
+ * shifts by as much), with the checklist unticked.
+ */
+const toggleTask = async (todo: TodoDoc, timeZone: string, now: Date): Promise<TodoView> => {
+  if (todo.completed) {
+    todo.completed = false;
+    todo.completedAt = null;
+    todo.lastCompletedAt = undefined;
+    syncReminder(todo);
+    await todo.save();
+    return viewOf(todo, timeZone, now);
+  }
+
+  if (todo.interactionType === "timer") {
+    todo.timerElapsedMs = 0;
+    todo.timerStartedAt = undefined;
+    todo.timerUpdatedAt = now;
+  }
+
+  if (!todo.repeat) {
+    todo.completed = true;
+    todo.completedAt = now;
+    todo.lastCompletedAt = now;
+    syncReminder(todo);
+    await todo.save();
+    return viewOf(todo, timeZone, now);
+  }
+
+  const today = localDateKey(now, timeZone);
+  const { _id: _ignored, createdAt: _created, updatedAt: _updated, ...rest } = todo.toObject({
+    versionKey: false,
+  }) as ITodo & { _id: unknown; createdAt?: Date; updatedAt?: Date };
+  await Todo.create({
+    ...rest,
+    completed: true,
+    completedAt: now,
+    lastCompletedAt: now,
+    repeat: null,
+    repeatOf: todo._id,
+    reminderAt: null,
+    when: isDay(todo.when) ? todo.when : today,
+  });
+
+  const planned = isDay(todo.when) ? (todo.when as string) : null;
+  const next = advanceRepeat(todo.repeat, planned, today);
+  if (todo.dueDate && DAY_PATTERN.test(todo.dueDate)) {
+    todo.dueDate = addDays(todo.dueDate, daysBetween(planned ?? today, next));
+  }
+  todo.when = next;
+  todo.completionCount += 1;
+  todo.lastCompletedAt = now;
+  todo.checklist.forEach((item) => {
+    item.done = false;
+  });
+  syncReminder(todo);
+  await todo.save();
+  return viewOf(todo, timeZone, now);
+};
+
+const HABIT_TO_UNIT = { daily: "day", weekly: "week", monthly: "month" } as const;
+const UNIT_TO_HABIT = { day: "daily", week: "weekly", month: "monthly", year: "monthly" } as const;
+
+/**
+ * Turns a habit into a repeating task or back. The completion history is
+ * kept either way, so switching back restores the streak.
+ */
+export const convertTodo = async (
+  id: string,
+  userId: string,
+  to: "habit" | "task",
+  timeZone: string,
+): Promise<TodoView> => {
+  const todo = await findOwned(id, userId);
+  const now = new Date();
+  const today = localDateKey(now, timeZone);
+
+  if (to === "task" && todo.recurrenceType !== "none") {
+    const rule: RepeatRule = {
+      every: 1,
+      unit: HABIT_TO_UNIT[todo.recurrenceType],
+      weekdays: [],
+      mode: "fixed",
+    };
+    const doneThisCycle = isCurrentlyComplete(todo, timeZone, now);
+    if (todo.timerStartedAt) stopTimer(todo, timeZone, now);
+    todo.recurrenceType = "none";
+    todo.repeat = rule;
+    todo.when = doneThisCycle ? advanceRepeat(rule, today, today) : today;
+    todo.completed = false;
+    todo.completedAt = null;
+    todo.paused = false;
+    todo.pausedAt = undefined;
+  } else if (to === "habit" && todo.recurrenceType === "none") {
+    todo.recurrenceType = todo.repeat ? UNIT_TO_HABIT[todo.repeat.unit] : "daily";
+    todo.repeat = null;
+    todo.when = null;
+    todo.time = null;
+    todo.evening = false;
+    todo.dueDate = undefined;
+    todo.completed = false;
+    todo.completedAt = null;
+  }
+  syncReminder(todo);
+  await todo.save();
+  return viewOf(todo, timeZone, now);
+};
+
+/** Done tasks, newest first, `limit` at a time before `before`; plus done projects in the same window. */
+export const listLogbook = async (
+  userId: string,
+  opts: { before?: Date; limit: number; timeZone: string },
+) => {
+  const window = opts.before ? { $lt: opts.before } : { $ne: null };
+  const [tasks, projects] = await Promise.all([
+    Todo.find({ userId, recurrenceType: "none", completedAt: window })
+      .sort({ completedAt: -1 })
+      .limit(opts.limit),
+    TodoProject.find({ userId, completedAt: window }).sort({ completedAt: -1 }).limit(opts.limit).lean(),
+  ]);
+  const now = new Date();
+  return {
+    tasks: tasks.map((todo) => toView(todo, opts.timeZone, now)),
+    projects: projects.map((project) => ({ ...project, _id: String(project._id) })),
+  };
 };
 
 /**

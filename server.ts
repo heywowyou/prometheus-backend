@@ -7,7 +7,7 @@ import logger from "./core/logger";
 import connectDB, { disconnectDB } from "./core/db";
 import { errorHandler, notFoundHandler } from "./core/http";
 
-import { todoRoutes, migrateLegacyHoldTodos } from "./modules/todos";
+import { todoRoutes, migrateLegacyHoldTodos, migrateTodosToThings } from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
@@ -15,6 +15,7 @@ import { metadataRoutes } from "./modules/metadata";
 import { exportRoutes } from "./modules/export";
 import { workoutRoutes } from "./modules/workouts";
 import { profileRoutes } from "./modules/profile";
+import { pushRoutes, startReminderJob, stopReminderJob } from "./modules/push";
 
 export const createApp = () => {
   const app = express();
@@ -41,6 +42,7 @@ export const createApp = () => {
   app.use("/api/metadata", metadataRoutes);
   app.use("/api/profile", profileRoutes);
   app.use("/api/export", exportRoutes);
+  app.use("/api/push", pushRoutes);
 
   // Must come after every route: unmatched paths become a 404, and all thrown
   // or rejected handlers land in one place.
@@ -57,13 +59,16 @@ const start = async () => {
   // One-off data fix-ups, safe to re-run on every boot.
   const migrated = await migrateLegacyHoldTodos();
   if (migrated > 0) logger.info(`Migrated ${migrated} "hold" todos`);
+  await migrateTodosToThings();
 
   const server = createApp().listen(config.port, () => {
     logger.info(`Server listening on port ${config.port} (${config.env})`);
   });
+  startReminderJob();
 
   const shutdown = (signal: string) => {
     logger.info(`${signal} received, shutting down`);
+    stopReminderJob();
     server.close(() => {
       void disconnectDB().finally(() => process.exit(0));
     });

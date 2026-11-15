@@ -1,5 +1,6 @@
 import Todo from "../todos/todo.model";
 import TodoHistory from "../todos/todo-history.model";
+import { TodoArea, TodoProject } from "../todos/todo-list.model";
 import MediaLog from "../media/mediaLog.model";
 import Note from "../notes/note.model";
 import Exercise from "../workouts/exercise.model";
@@ -8,11 +9,13 @@ import WorkoutSession from "../workouts/workout-session.model";
 import Profile from "../profile/profile.model";
 
 /** Bumped whenever the export's shape changes, so an importer can adapt. */
-export const EXPORT_VERSION = 3;
+export const EXPORT_VERSION = 4;
 
 type ExportedCollection =
   | "todos"
   | "todoHistory"
+  | "todoAreas"
+  | "todoProjects"
   | "mediaLogs"
   | "notes"
   | "exercises"
@@ -26,6 +29,9 @@ export interface DataExport {
   counts: Record<ExportedCollection, number>;
   todos: unknown[];
   todoHistory: unknown[];
+  todoAreas: unknown[];
+  /** Includes done projects. */
+  todoProjects: unknown[];
   mediaLogs: unknown[];
   /** Includes archived notes and notes in the trash. */
   notes: unknown[];
@@ -44,10 +50,12 @@ export interface DataExport {
  */
 export const exportUserData = async (userId: string): Promise<DataExport> => {
   const projection = { __v: 0 };
-  const [todos, todoHistory, mediaLogs, notes, exercises, routines, workoutSessions, profile] =
+  const [todos, todoHistory, todoAreas, todoProjects, mediaLogs, notes, exercises, routines, workoutSessions, profile] =
     await Promise.all([
       Todo.find({ userId }, projection).sort({ createdAt: 1 }).lean(),
       TodoHistory.find({ userId }, projection).sort({ completedAt: 1 }).lean(),
+      TodoArea.find({ userId }, projection).sort({ order: 1 }).lean(),
+      TodoProject.find({ userId }, projection).sort({ order: 1 }).lean(),
       MediaLog.find({ userId }, projection).sort({ date: 1 }).lean(),
       // plainText/empty are derived from content on save; no need to back them up.
       Note.find({ userId }, { ...projection, plainText: 0, empty: 0 })
@@ -67,6 +75,8 @@ export const exportUserData = async (userId: string): Promise<DataExport> => {
     counts: {
       todos: todos.length,
       todoHistory: todoHistory.length,
+      todoAreas: todoAreas.length,
+      todoProjects: todoProjects.length,
       mediaLogs: mediaLogs.length,
       notes: notes.length,
       exercises: exercises.length,
@@ -75,6 +85,8 @@ export const exportUserData = async (userId: string): Promise<DataExport> => {
     },
     todos,
     todoHistory,
+    todoAreas,
+    todoProjects,
     mediaLogs,
     notes,
     exercises,

@@ -1,4 +1,5 @@
-import { Schema, model, type Model } from "mongoose";
+import { Schema, model, type Model, type Types } from "mongoose";
+import { REPEAT_MODES, REPEAT_UNITS, type RepeatRule } from "./repeat";
 import { RECURRENCE_TYPES, type RecurrenceType } from "../../core/domain";
 import type { UserItemBase } from "../../core/domain";
 
@@ -44,6 +45,37 @@ export interface ITodo extends UserItemBase {
   order?: number;
   paused: boolean;
   pausedAt?: Date;
+
+  /* ---- Tasks (recurrenceType "none"). Habits are the recurring ones. ---- */
+
+  /** Rich-text body (HTML from the notes editor). */
+  notes: string;
+  checklist: Array<{ _id?: Types.ObjectId; text: string; done: boolean }>;
+  areaId?: Types.ObjectId | null;
+  projectId?: Types.ObjectId | null;
+  /** A heading inside the project. */
+  headingId?: Types.ObjectId | null;
+  tags: string[];
+  important: boolean;
+  /**
+   * When to start: a day (`YYYY-MM-DD`), `someday`, or unset (Inbox when it
+   * has no project or area, Anytime otherwise). The deadline is `dueDate`.
+   */
+  when?: string | null;
+  /** On the `when` day, after work ("This Evening"). */
+  evening: boolean;
+  /** `HH:mm` on the `when` day; a reminder fires then. */
+  time?: string | null;
+  /** The zone `time` is in, captured when it's set. */
+  timeZone?: string | null;
+  /** The instant `when` + `time` + `timeZone` denote, for the reminder job. */
+  reminderAt?: Date | null;
+  reminderSentAt?: Date | null;
+  repeat?: RepeatRule | null;
+  /** Done tasks (Logbook). */
+  completedAt?: Date | null;
+  /** On a Logbook copy made when a repeating task was done: the task it came from. */
+  repeatOf?: Types.ObjectId | null;
 }
 
 const TodoSchema = new Schema<ITodo>(
@@ -78,6 +110,49 @@ const TodoSchema = new Schema<ITodo>(
     },
     paused: { type: Boolean, default: false },
     pausedAt: { type: Date, required: false },
+    notes: { type: String, default: "", maxlength: 200_000 },
+    checklist: {
+      type: [
+        {
+          text: { type: String, trim: true, maxlength: 500, default: "" },
+          done: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
+    },
+    areaId: { type: Schema.Types.ObjectId, ref: "TodoArea", default: null },
+    projectId: { type: Schema.Types.ObjectId, ref: "TodoProject", default: null },
+    headingId: { type: Schema.Types.ObjectId, default: null },
+    tags: { type: [String], default: [] },
+    important: { type: Boolean, default: false },
+    when: {
+      type: String,
+      default: null,
+      validate: {
+        validator: (value: string | null) =>
+          value === null || value === "someday" || DUE_DATE_PATTERN.test(value),
+        message: "when must be YYYY-MM-DD or someday",
+      },
+    },
+    evening: { type: Boolean, default: false },
+    time: { type: String, default: null, match: [/^([01]\d|2[0-3]):[0-5]\d$/, "time must be HH:mm"] },
+    timeZone: { type: String, default: null },
+    reminderAt: { type: Date, default: null },
+    reminderSentAt: { type: Date, default: null },
+    repeat: {
+      type: new Schema(
+        {
+          every: { type: Number, min: 1, max: 365, default: 1 },
+          unit: { type: String, enum: REPEAT_UNITS, required: true },
+          weekdays: { type: [Number], default: [] },
+          mode: { type: String, enum: REPEAT_MODES, default: "fixed" },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    completedAt: { type: Date, default: null },
+    repeatOf: { type: Schema.Types.ObjectId, default: null },
     userId: { type: String, required: true },
   },
   { timestamps: true },
@@ -85,6 +160,10 @@ const TodoSchema = new Schema<ITodo>(
 
 // Serves the dashboard query (active todos for a user) and the paused panel.
 TodoSchema.index({ userId: 1, paused: 1, createdAt: -1 });
+// The Logbook, newest first.
+TodoSchema.index({ userId: 1, completedAt: -1 });
+// The reminder job: due and not yet sent.
+TodoSchema.index({ reminderAt: 1 });
 
 const Todo: Model<ITodo> = model<ITodo>("Todo", TodoSchema);
 

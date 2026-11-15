@@ -54,6 +54,16 @@ export const config = {
    * offers Steam's own box art.
    */
   steamGridDbKey: optional("STEAMGRIDDB_API_KEY", ""),
+  /**
+   * Web push (task reminders). Optional: without the keys the API boots,
+   * the push endpoints answer 503 and no reminder job runs.
+   */
+  push: {
+    publicKey: optional("VAPID_PUBLIC_KEY", ""),
+    privateKey: optional("VAPID_PRIVATE_KEY", ""),
+    /** Contact for push services: a mailto: or https: URL. */
+    subject: optional("VAPID_SUBJECT", "https://prometheus-production-848d.up.railway.app"),
+  },
 } as const;
 
 export const isProduction = config.env === "production";

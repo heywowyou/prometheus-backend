@@ -85,11 +85,28 @@ const midnightIn = (
   month: number,
   day: number,
   timeZone: string,
+): Date => instantIn(year, month, day, 0, 0, timeZone);
+
+/** The instant at which the clock in `timeZone` reads `hour:minute` on the given day. */
+const instantIn = (
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
 ): Date => {
-  const guess = Date.UTC(year, month - 1, day);
+  const guess = Date.UTC(year, month - 1, day, hour, minute);
   // A second pass settles the offset when the guess lands across a DST change.
   const first = guess - offsetAt(guess, timeZone);
   return new Date(guess - offsetAt(first, timeZone));
+};
+
+/** The instant of `day` (`YYYY-MM-DD`) at `time` (`HH:mm`) on the clock of `timeZone`. */
+export const zonedInstant = (day: string, time: string, timeZone: string): Date => {
+  const [year, month, date] = day.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  return instantIn(year ?? 1970, month ?? 1, date ?? 1, hour ?? 0, minute ?? 0, timeZone);
 };
 
 const DAY_MS = 86_400_000;
