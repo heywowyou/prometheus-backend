@@ -22,8 +22,9 @@ import {
 import * as MediaService from "./media.service";
 
 /** Accepts either the structured cover or a bare URL string from older clients. */
+// Absent, null and "" all mean "none": a hand-filled form omits the field.
 const parseCover = (value: unknown): CoverImage | null => {
-  if (value === null || value === "") return null;
+  if (value === undefined || value === null || value === "") return null;
   if (typeof value === "string") return { url: value, source: "external" };
   if (typeof value !== "object") {
     throw new BadRequestError("cover must be an object, a URL string, or null");
@@ -39,7 +40,7 @@ const parseCover = (value: unknown): CoverImage | null => {
 };
 
 const parseExternal = (value: unknown): ExternalRef | null => {
-  if (value === null || value === "") return null;
+  if (value === undefined || value === null || value === "") return null;
   if (typeof value !== "object") {
     throw new BadRequestError("external must be an object or null");
   }
