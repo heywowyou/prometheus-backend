@@ -16,6 +16,7 @@ import { exportRoutes } from "./modules/export";
 import { workoutRoutes } from "./modules/workouts";
 import { profileRoutes } from "./modules/profile";
 import { pushRoutes, startReminderJob, stopReminderJob } from "./modules/push";
+import { calendarRoutes } from "./modules/calendar";
 
 export const createApp = () => {
   const app = express();
@@ -43,6 +44,7 @@ export const createApp = () => {
   app.use("/api/profile", profileRoutes);
   app.use("/api/export", exportRoutes);
   app.use("/api/push", pushRoutes);
+  app.use("/api/calendar", calendarRoutes);
 
   // Must come after every route: unmatched paths become a 404, and all thrown
   // or rejected handlers land in one place.

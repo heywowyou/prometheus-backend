@@ -6,6 +6,7 @@ export {
   cycleIndex,
   localDateKey,
   zonedInstant,
+  localTimeKey,
 } from "./recurrence";
 export type { RecurrenceType } from "./recurrence";
 export type { UserItemBase, HistoryEventBase } from "./types";

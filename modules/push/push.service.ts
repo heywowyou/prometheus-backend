@@ -4,6 +4,8 @@ import logger from "../../core/logger";
 import { ServiceUnavailableError } from "../../core/errors/AppError";
 import PushSubscription from "./push-subscription.model";
 import Todo from "../todos/todo.model";
+import { claimDueReminders } from "../calendar/calendar.service";
+import { localTimeKey } from "../../core/domain";
 
 export const pushEnabled = Boolean(config.push.publicKey && config.push.privateKey);
 
@@ -107,6 +109,27 @@ export const sendDueReminders = async (now = new Date()): Promise<number> => {
   return sent;
 };
 
+/** Sends calendar event reminders that are due. */
+export const sendDueEventReminders = async (now = new Date()): Promise<number> => {
+  const claimed = await claimDueReminders(now);
+  for (const { event, at } of claimed) {
+    const lead = event.remindMinutes ?? 0;
+    const startsAt = new Date(at.getTime() + lead * 60_000);
+    const when = event.allDay
+      ? "Today"
+      : lead === 0
+        ? `Now, ${localTimeKey(startsAt, event.timeZone)}`
+        : `At ${localTimeKey(startsAt, event.timeZone)}`;
+    await sendToUser(event.userId, {
+      title: event.title || "Event",
+      body: event.location ? `${when} · ${event.location}` : when,
+      url: "/calendar",
+      tag: `event-${String(event._id)}`,
+    });
+  }
+  return claimed.length;
+};
+
 let timer: NodeJS.Timeout | null = null;
 
 export const startReminderJob = () => {
@@ -117,6 +140,7 @@ export const startReminderJob = () => {
   if (timer) return;
   timer = setInterval(() => {
     sendDueReminders().catch((error: unknown) => logger.error("Reminder job failed", error));
+    sendDueEventReminders().catch((error: unknown) => logger.error("Event reminder job failed", error));
   }, JOB_INTERVAL_MS);
   timer.unref();
   logger.info("Task reminder job started");

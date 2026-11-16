@@ -141,6 +141,12 @@ export const cycleIndex = (
   }
 };
 
+/** `HH:mm` of `date` on the clock of `timeZone`. */
+export const localTimeKey = (date: Date, timeZone: string): string => {
+  const { hour, minute } = wallClock(date, timeZone);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+};
+
 /** `YYYY-MM-DD` of `date`'s calendar day in `timeZone`. */
 export const localDateKey = (date: Date, timeZone: string): string => {
   const { year, month, day } = wallClock(date, timeZone);
