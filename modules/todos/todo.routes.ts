@@ -20,6 +20,7 @@ import {
   updateProject,
   deleteProject,
   reorderLists,
+  getHabitCompletions,
 } from "./todo.controller";
 import { requireUser } from "../../core/auth";
 
@@ -31,6 +32,7 @@ router.route("/").get(listTodos).post(createTodo);
 // Before /:id, which would otherwise read these segments as ids.
 router.patch("/reorder", reorderTodos);
 router.get("/logbook", listLogbook);
+router.get("/habits/completions", getHabitCompletions);
 router.get("/lists", getLists);
 router.patch("/lists/reorder", reorderLists);
 router.post("/areas", createArea);

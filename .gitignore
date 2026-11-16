@@ -6,3 +6,5 @@ node_modules/
 
 # System files
 .DS_Store
+# Build output (Railway builds it)
+dist/

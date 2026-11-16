@@ -315,3 +315,8 @@ export const reorderLists = asyncHandler(async (req, res) => {
   await ListService.reorderLists(getUserId(req), kind, ids);
   res.status(204).send();
 });
+
+export const getHabitCompletions = asyncHandler(async (req, res) => {
+  const days = asNumber(req.query.days, "days", { min: 7, max: 400, integer: true }) ?? 182;
+  res.status(200).json(await TodoService.getHabitCompletions(getUserId(req), days, getRequestTimeZone(req)));
+});

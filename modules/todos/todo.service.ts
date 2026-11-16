@@ -725,6 +725,32 @@ export const getTodoHistory = async (
   };
 };
 
+/**
+ * Completion days of every habit over the last `days`, in the caller's zone:
+ * per-habit dots and the overall heatmap on the Habits page, in one request.
+ */
+export const getHabitCompletions = async (
+  userId: string,
+  days: number,
+  timeZone: string,
+): Promise<{ habits: Array<{ todoId: string; days: string[] }>; totals: Array<{ date: string; count: number }> }> => {
+  const since = new Date(Date.now() - days * 86_400_000);
+  const rows = await TodoHistory.find({ userId, completedAt: { $gte: since } }, { todoId: 1, completedAt: 1 }).lean();
+  const perHabit = new Map<string, Set<string>>();
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const key = localDateKey(row.completedAt, timeZone);
+    const id = String(row.todoId);
+    if (!perHabit.has(id)) perHabit.set(id, new Set());
+    perHabit.get(id)?.add(key);
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+  return {
+    habits: [...perHabit].map(([todoId, set]) => ({ todoId, days: [...set].sort() })),
+    totals: [...totals].map(([date, count]) => ({ date, count })),
+  };
+};
+
 export const pauseTodo = async (
   id: string,
   userId: string,
