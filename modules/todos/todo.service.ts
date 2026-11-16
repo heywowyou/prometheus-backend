@@ -2,7 +2,7 @@ import { Types, type HydratedDocument } from "mongoose";
 import Todo, { type ITodo, type InteractionType } from "./todo.model";
 import TodoHistory from "./todo-history.model";
 import { TodoArea, TodoProject } from "./todo-list.model";
-import { advanceRepeat, addDays, daysBetween, DAY_PATTERN, type RepeatRule } from "./repeat";
+import { advanceRepeat, addDays, alignToRule, daysBetween, DAY_PATTERN, type RepeatRule } from "./repeat";
 import { normaliseTags } from "../notes/note.text";
 import { computeStreak, type Streak } from "../../core/domain";
 import {
@@ -265,6 +265,8 @@ export interface CreateTodoInput extends TaskFieldsInput {
   dueDate?: string;
   /** Daily habits only: days a week to aim for (1-6), or null for every day. */
   perWeek?: number | null;
+  /** A Lucide icon name, "" to clear. */
+  icon?: string;
 }
 
 const isDay = (value: string | null | undefined): boolean =>
@@ -364,6 +366,11 @@ const applyTaskFields = async (
     if (input.time) todo.timeZone = timeZone;
   }
   if (input.repeat !== undefined) todo.repeat = input.repeat;
+  // "Every month on the 1st": the task moves to the next 1st (or stays, if it's on one).
+  if (input.repeat?.unit === "month" && input.repeat.monthDay) {
+    const from = isDay(todo.when) && (todo.when as string) >= today ? (todo.when as string) : today;
+    todo.when = alignToRule(from, input.repeat);
+  }
 
   if ((todo.time || todo.repeat || todo.evening) && !isDay(todo.when)) {
     if (todo.when === "someday") {
@@ -403,6 +410,7 @@ export const createTodo = async (
       ? {}
       : { dueDate: input.dueDate }),
     perWeek: recurrenceType === "daily" ? (input.perWeek ?? null) : null,
+    icon: input.icon ?? "",
   });
   assertValidMode(todo);
   await applyTaskFields(todo, input, userId, timeZone);
@@ -448,6 +456,7 @@ export const updateTodo = async (
   }
 
   if (input.perWeek !== undefined) todo.perWeek = input.perWeek;
+  if (input.icon !== undefined) todo.icon = input.icon;
   if (todo.recurrenceType !== "daily") todo.perWeek = null;
 
   if (input.dueDate !== undefined) todo.dueDate = input.dueDate ?? undefined;

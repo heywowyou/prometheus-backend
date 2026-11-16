@@ -52,6 +52,8 @@ export interface ITodo extends UserItemBase {
   skips: string[];
   /** Daily habits only: aim for this many days a week (1-6); null = every day. */
   perWeek?: number | null;
+  /** A Lucide icon name shown before the title (habits); "" for none. */
+  icon: string;
 
   /* ---- Tasks (recurrenceType "none"). Habits are the recurring ones. ---- */
 
@@ -119,6 +121,7 @@ const TodoSchema = new Schema<ITodo>(
     pausedAt: { type: Date, required: false },
     skips: { type: [String], default: [] },
     perWeek: { type: Number, min: 1, max: 6, default: null },
+    icon: { type: String, default: "", maxlength: 60, match: [/^[a-z0-9-]*$/, "icon must be a Lucide icon name"] },
     notes: { type: String, default: "", maxlength: 200_000 },
     checklist: {
       type: [
@@ -155,6 +158,7 @@ const TodoSchema = new Schema<ITodo>(
           unit: { type: String, enum: REPEAT_UNITS, required: true },
           weekdays: { type: [Number], default: [] },
           mode: { type: String, enum: REPEAT_MODES, default: "fixed" },
+          monthDay: { type: Number, min: -1, max: 31, default: null },
         },
         { _id: false },
       ),

@@ -18,7 +18,21 @@ export interface RepeatRule {
   weekdays: number[];
   /** `fixed`: on schedule from the planned day; `afterCompletion`: counted from the day it's done. */
   mode: RepeatMode;
+  /**
+   * Monthly rules only: the day of the month it falls on (1-31, clamped to
+   * short months), or -1 for the last day. Absent or null: the planned day's.
+   */
+  monthDay?: number | null;
 }
+
+/** `monthDay` of the month `months` after `day`'s month (-1 = last day; clamped). */
+const dayInMonth = (day: string, months: number, monthDay: number): string => {
+  const date = toUtc(day);
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(monthDay === -1 ? lastDay : Math.min(monthDay, lastDay));
+  return toKey(target);
+};
 
 export const DAY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
@@ -71,11 +85,27 @@ export const nextOccurrence = (from: string, rule: RepeatRule): string => {
       }
       return addDays(from, 7 * every);
     }
-    case "month":
+    case "month": {
+      if (rule.monthDay) {
+        // Off-schedule days (a task just switched to "on the 1st") snap to the next one.
+        const sameMonth = dayInMonth(from, 0, rule.monthDay);
+        return sameMonth > from ? sameMonth : dayInMonth(from, every, rule.monthDay);
+      }
       return addMonths(from, every);
+    }
     case "year":
       return addMonths(from, 12 * every);
   }
+};
+
+/**
+ * For monthly rules pinned to a day of the month: the first occurrence on or
+ * after `day` (`day` itself when it's on the schedule). Other rules: `day`.
+ */
+export const alignToRule = (day: string, rule: RepeatRule): string => {
+  if (rule.unit !== "month" || !rule.monthDay) return day;
+  const previous = addDays(day, -1);
+  return nextOccurrence(previous, rule) === day ? day : nextOccurrence(day, rule);
 };
 
 /**

@@ -49,7 +49,7 @@ const parseFields = (b: Record<string, unknown>) => ({
   content: asString(b.content, "content", { trim: false }),
   tags: parseTags(b.tags),
   fontFamily: asEnum(b.fontFamily, "fontFamily", NOTE_FONT_FAMILIES),
-  icon: asString(b.icon, "icon", { maxLength: 16 }),
+  icon: asString(b.icon, "icon", { maxLength: 60 }),
 });
 
 export const listNotes = asyncHandler(async (req, res) => {

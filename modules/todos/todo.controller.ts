@@ -17,6 +17,13 @@ import { RECURRENCE_TYPES } from "../../core/domain";
 import { DUE_DATE_PATTERN, INTERACTION_TYPES, MAX_DURATION_GOAL } from "./todo.model";
 import * as TodoService from "./todo.service";
 
+/** A Lucide icon name ("book-open"), or "" to clear. */
+const parseIcon = (value: unknown): string => {
+  const icon = (asString(value, "icon", { maxLength: 60 }) ?? "").trim();
+  if (icon && !/^[a-z0-9-]+$/.test(icon)) throw new BadRequestError("icon must be a Lucide icon name");
+  return icon;
+};
+
 const parseTodoFields = (body: unknown) => {
   const b = (body ?? {}) as Record<string, unknown>;
   return {
@@ -27,6 +34,7 @@ const parseTodoFields = (body: unknown) => {
       max: MAX_DURATION_GOAL,
       integer: true,
     }),
+    icon: supplied(b, "icon") ? parseIcon(b.icon) : undefined,
     // null (or 7) = every day; undefined = unchanged.
     perWeek: supplied(b, "perWeek")
       ? b.perWeek === null || b.perWeek === 7
@@ -66,11 +74,14 @@ const parseRepeat = (value: unknown): RepeatRule | null => {
   const weekdays = Array.isArray(r.weekdays)
     ? [...new Set(r.weekdays.map((day) => Number(day)))].filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
     : [];
+  const monthDay = r.monthDay === null || r.monthDay === undefined ? null : asNumber(r.monthDay, "repeat.monthDay", { min: -1, max: 31, integer: true });
+  if (monthDay === 0) throw new BadRequestError("repeat.monthDay must be 1-31 or -1 for the last day");
   return {
     every: asNumber(r.every, "repeat.every", { min: 1, max: 365, integer: true }) ?? 1,
     unit,
     weekdays: unit === "week" ? weekdays : [],
     mode: asEnum(r.mode, "repeat.mode", REPEAT_MODES) ?? "fixed",
+    monthDay: unit === "month" ? (monthDay ?? null) : null,
   };
 };
 

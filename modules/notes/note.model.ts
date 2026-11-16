@@ -44,7 +44,7 @@ export interface INote extends UserItemBase {
   parentId?: Types.ObjectId | null;
   /** Position among its siblings, ascending. */
   order: number;
-  /** An emoji shown before the title. */
+  /** A Lucide icon name (older pages: an emoji) shown before the title. */
   icon: string;
   cover?: NoteCover | null;
   /** Set on a daily note: the day it belongs to. Unique per user. */
@@ -89,7 +89,7 @@ const NoteSchema = new Schema<INote>(
     },
     parentId: { type: Schema.Types.ObjectId, default: null },
     order: { type: Number, default: 0 },
-    icon: { type: String, default: "", maxlength: 16 },
+    icon: { type: String, default: "", maxlength: 60 },
     cover: { type: CoverSchema, default: null },
     dailyDate: { type: String, match: DAILY_DATE_PATTERN },
     isTemplate: { type: Boolean, default: false },

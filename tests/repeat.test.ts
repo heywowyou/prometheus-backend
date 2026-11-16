@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceRepeat, nextOccurrence, type RepeatRule } from "../modules/todos/repeat";
+import { advanceRepeat, alignToRule, nextOccurrence, type RepeatRule } from "../modules/todos/repeat";
 import { zonedInstant } from "../core/domain/recurrence";
 
 const rule = (partial: Partial<RepeatRule>): RepeatRule => ({
@@ -38,4 +38,29 @@ test("after-completion schedules count from today", () => {
 test("reminder instants follow the user's zone across DST", () => {
   assert.equal(zonedInstant("2026-11-16", "09:30", "Europe/Paris").toISOString(), "2026-11-16T08:30:00.000Z");
   assert.equal(zonedInstant("2026-07-01", "09:30", "Europe/Paris").toISOString(), "2026-07-01T07:30:00.000Z");
+});
+
+test("monthly on a set day of the month", () => {
+  const first = rule({ unit: "month", monthDay: 1 });
+  assert.equal(nextOccurrence("2026-11-16", first), "2026-12-01");
+  assert.equal(nextOccurrence("2026-12-01", first), "2027-01-01");
+  const last = rule({ unit: "month", monthDay: -1 });
+  assert.equal(nextOccurrence("2026-01-31", last), "2026-02-28");
+  assert.equal(nextOccurrence("2026-02-10", last), "2026-02-28");
+  const thirtyFirst = rule({ unit: "month", monthDay: 31 });
+  assert.equal(nextOccurrence("2026-01-31", thirtyFirst), "2026-02-28");
+  assert.equal(nextOccurrence("2026-02-28", thirtyFirst), "2026-03-31");
+});
+
+test("a task switched to the 1st moves to the next 1st, or stays on one", () => {
+  const first = rule({ unit: "month", monthDay: 1 });
+  assert.equal(alignToRule("2026-11-16", first), "2026-12-01");
+  assert.equal(alignToRule("2026-12-01", first), "2026-12-01");
+  // Rules without a set day leave the day alone.
+  assert.equal(alignToRule("2026-11-16", rule({ unit: "month" })), "2026-11-16");
+});
+
+test("done late, a monthly-on-the-1st task comes back on the next 1st", () => {
+  const first = rule({ unit: "month", monthDay: 1 });
+  assert.equal(advanceRepeat(first, "2026-11-01", "2026-11-16"), "2026-12-01");
 });
