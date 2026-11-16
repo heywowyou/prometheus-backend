@@ -27,6 +27,12 @@ const parseTodoFields = (body: unknown) => {
       max: MAX_DURATION_GOAL,
       integer: true,
     }),
+    // null (or 7) = every day; undefined = unchanged.
+    perWeek: supplied(b, "perWeek")
+      ? b.perWeek === null || b.perWeek === 7
+        ? null
+        : asNumber(b.perWeek, "perWeek", { min: 1, max: 6, integer: true })
+      : undefined,
   };
 };
 
@@ -160,6 +166,15 @@ export const toggleTodo = asyncHandler(async (req, res) => {
   res.status(200).json(todo);
 });
 
+export const skipTodo = asyncHandler(async (req, res) => {
+  const todo = await TodoService.toggleSkip(
+    String(req.params.id),
+    getUserId(req),
+    getRequestTimeZone(req),
+  );
+  res.status(200).json(todo);
+});
+
 export const reorderTodos = asyncHandler(async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   if (!Array.isArray(b.ids) || b.ids.length === 0 || b.ids.length > 500) {
@@ -235,6 +250,8 @@ export const listLogbook = asyncHandler(async (req, res) => {
     before: asDate(req.query.before, "before"),
     limit: asNumber(req.query.limit, "limit", { min: 1, max: 200, integer: true }) ?? 60,
     timeZone: getRequestTimeZone(req),
+    projectId: asString(req.query.projectId, "projectId", { maxLength: 40 }) || undefined,
+    areaId: asString(req.query.areaId, "areaId", { maxLength: 40 }) || undefined,
   });
   res.status(200).json(logbook);
 });

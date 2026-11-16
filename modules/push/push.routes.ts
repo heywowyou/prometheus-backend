@@ -42,6 +42,40 @@ router.delete(
   }),
 );
 
+/**
+ * The running focus timer's end, announced by push even if the app is closed.
+ * PUT schedules or moves it, DELETE cancels it (paused, reset or ended in app).
+ */
+router.put(
+  "/timer",
+  asyncHandler(async (req, res) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const sendAt = new Date(asRequiredString(b.endsAt, "endsAt", { maxLength: 40 }));
+    const now = Date.now();
+    if (Number.isNaN(sendAt.getTime()) || sendAt.getTime() < now - 60_000 || sendAt.getTime() > now + 6 * 3600_000) {
+      throw new BadRequestError("endsAt must be a time within the next 6 hours");
+    }
+    if (!PushService.pushEnabled) {
+      res.status(204).send();
+      return;
+    }
+    await PushService.scheduleTimerAlert(getUserId(req), {
+      sendAt,
+      title: asRequiredString(b.title, "title", { maxLength: 120 }),
+      body: asString(b.body, "body", { maxLength: 240 }) ?? "",
+    });
+    res.status(204).send();
+  }),
+);
+
+router.delete(
+  "/timer",
+  asyncHandler(async (req, res) => {
+    await PushService.cancelTimerAlert(getUserId(req));
+    res.status(204).send();
+  }),
+);
+
 /** Sends a test notification to every device of the caller. */
 router.post(
   "/test",

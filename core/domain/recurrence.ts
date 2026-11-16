@@ -141,6 +141,45 @@ export const cycleIndex = (
   }
 };
 
+/** Days since 1970-01-01 of a `YYYY-MM-DD` key. */
+const dayIndexOfKey = (key: string): number => {
+  const [year, month, day] = key.split("-").map(Number);
+  return Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1) / DAY_MS;
+};
+
+const keyOfDayIndex = (index: number): string => new Date(index * DAY_MS).toISOString().slice(0, 10);
+
+/** The cycle number (as `cycleIndex`) of the day `key` (`YYYY-MM-DD`). */
+export const cycleIndexOfKey = (key: string, type: RecurrenceType): number => {
+  switch (type) {
+    case "weekly":
+      return Math.floor((dayIndexOfKey(key) + 3) / 7);
+    case "monthly": {
+      const [year, month] = key.split("-").map(Number);
+      return (year ?? 1970) * 12 + ((month ?? 1) - 1);
+    }
+    case "daily":
+    case "none":
+      return dayIndexOfKey(key);
+  }
+};
+
+/**
+ * The first day (`YYYY-MM-DD`) of the cycle `date` falls in: the day itself,
+ * that week's Monday, or the 1st of the month. Skips are stored by this key.
+ */
+export const cycleKey = (date: Date, type: RecurrenceType, timeZone: string): string => {
+  switch (type) {
+    case "weekly":
+      return keyOfDayIndex(cycleIndex(date, "weekly", timeZone) * 7 - 3);
+    case "monthly":
+      return `${localDateKey(date, timeZone).slice(0, 7)}-01`;
+    case "daily":
+    case "none":
+      return localDateKey(date, timeZone);
+  }
+};
+
 /** `HH:mm` of `date` on the clock of `timeZone`. */
 export const localTimeKey = (date: Date, timeZone: string): string => {
   const { hour, minute } = wallClock(date, timeZone);

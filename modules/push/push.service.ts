@@ -3,6 +3,7 @@ import config from "../../core/config";
 import logger from "../../core/logger";
 import { ServiceUnavailableError } from "../../core/errors/AppError";
 import PushSubscription from "./push-subscription.model";
+import TimerAlert from "./timer-alert.model";
 import Todo from "../todos/todo.model";
 import { claimDueReminders } from "../calendar/calendar.service";
 import { localTimeKey } from "../../core/domain";
@@ -78,6 +79,8 @@ export const sendToUser = async (userId: string, payload: PushPayload): Promise<
 /** Reminders older than this when the job sees them are dropped, not sent late. */
 const STALE_MS = 6 * 60 * 60 * 1000;
 const JOB_INTERVAL_MS = 60 * 1000;
+/** Timer alerts are checked more often: a focus block ending a minute late feels broken. */
+const TIMER_JOB_INTERVAL_MS = 10 * 1000;
 
 const formatTime = (time: string) => time;
 
@@ -130,7 +133,40 @@ export const sendDueEventReminders = async (now = new Date()): Promise<number> =
   return claimed.length;
 };
 
+/** Schedules (or moves) the caller's focus timer alert. */
+export const scheduleTimerAlert = async (
+  userId: string,
+  alert: { sendAt: Date; title: string; body: string },
+): Promise<void> => {
+  await TimerAlert.updateOne(
+    { userId },
+    { $set: { ...alert, sentAt: null } },
+    { upsert: true },
+  );
+};
+
+export const cancelTimerAlert = async (userId: string): Promise<void> => {
+  await TimerAlert.deleteOne({ userId });
+};
+
+/** Sends focus timer alerts that are due. */
+export const sendDueTimerAlerts = async (now = new Date()): Promise<number> => {
+  const due = await TimerAlert.find({
+    sentAt: null,
+    sendAt: { $lte: now, $gte: new Date(now.getTime() - STALE_MS) },
+  }).limit(50);
+  let sent = 0;
+  for (const alert of due) {
+    const claimed = await TimerAlert.updateOne({ _id: alert._id, sentAt: null }, { $set: { sentAt: now } });
+    if (claimed.modifiedCount === 0) continue;
+    await sendToUser(alert.userId, { title: alert.title, body: alert.body, url: "/", tag: "focus-timer" });
+    sent += 1;
+  }
+  return sent;
+};
+
 let timer: NodeJS.Timeout | null = null;
+let timerAlertJob: NodeJS.Timeout | null = null;
 
 export const startReminderJob = () => {
   if (!pushEnabled) {
@@ -143,10 +179,16 @@ export const startReminderJob = () => {
     sendDueEventReminders().catch((error: unknown) => logger.error("Event reminder job failed", error));
   }, JOB_INTERVAL_MS);
   timer.unref();
+  timerAlertJob = setInterval(() => {
+    sendDueTimerAlerts().catch((error: unknown) => logger.error("Timer alert job failed", error));
+  }, TIMER_JOB_INTERVAL_MS);
+  timerAlertJob.unref();
   logger.info("Task reminder job started");
 };
 
 export const stopReminderJob = () => {
   if (timer) clearInterval(timer);
+  if (timerAlertJob) clearInterval(timerAlertJob);
   timer = null;
+  timerAlertJob = null;
 };

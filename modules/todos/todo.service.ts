@@ -6,6 +6,7 @@ import { advanceRepeat, addDays, daysBetween, DAY_PATTERN, type RepeatRule } fro
 import { normaliseTags } from "../notes/note.text";
 import { computeStreak, type Streak } from "../../core/domain";
 import {
+  cycleKey,
   getNextResetTime,
   localDateKey,
   zonedInstant,
@@ -74,15 +75,44 @@ export interface TodoView
   timer?: { elapsedMs: number; startedAt?: Date };
   /** Recurring tasks only. */
   streak?: Streak;
+  /** Habits: the current cycle was skipped on purpose. */
+  skipped?: boolean;
+  /** Daily habits with a weekly target: days done this week (Monday-based). */
+  thisWeek?: number;
 }
+
+/** Most skips kept per habit: about a year of daily rest days. */
+const MAX_SKIPS = 400;
+
+/** Distinct local days in the current Monday-based week among `completions`. */
+const daysDoneThisWeek = (completions: Date[], timeZone: string, now: Date): number => {
+  const monday = cycleKey(now, "weekly", timeZone);
+  return new Set(
+    completions
+      .map((date) => localDateKey(date, timeZone))
+      .filter((key) => key >= monday),
+  ).size;
+};
+
+/** Streak and week progress of a habit, from its completion dates. */
+const habitExtras = (todo: ITodo, completions: Date[], timeZone: string, now: Date) => ({
+  streak: computeStreak(completions, todo.recurrenceType, timeZone, now, todo.skips ?? []),
+  ...(todo.recurrenceType === "daily" && todo.perWeek
+    ? { thisWeek: daysDoneThisWeek(completions, timeZone, now) }
+    : {}),
+});
 
 export const toView = (
   todo: TodoDoc,
   timeZone: string,
   now = new Date(),
-  streak?: Streak,
+  extras?: { streak: Streak; thisWeek?: number },
 ): TodoView => {
   const live = isCurrentlyComplete(todo, timeZone, now);
+  const skipped =
+    todo.recurrenceType !== "none" &&
+    !live &&
+    (todo.skips ?? []).includes(cycleKey(now, todo.recurrenceType, timeZone));
   const {
     timerElapsedMs: _elapsed,
     timerStartedAt: _started,
@@ -111,7 +141,8 @@ export const toView = (
           },
         }
       : {}),
-    ...(streak ? { streak } : {}),
+    ...(extras ?? {}),
+    ...(todo.recurrenceType !== "none" ? { skipped } : {}),
   };
 };
 
@@ -147,12 +178,7 @@ const viewOf = async (
   const completions = (await completionsByTodo(todo.userId, [todo._id])).get(
     String(todo._id),
   );
-  return toView(
-    todo,
-    timeZone,
-    now,
-    computeStreak(completions ?? [], todo.recurrenceType, timeZone, now),
-  );
+  return toView(todo, timeZone, now, habitExtras(todo, completions ?? [], timeZone, now));
 };
 
 /** Loads a todo and asserts the caller owns it. */
@@ -210,12 +236,7 @@ export const listTodos = async (
       now,
       todo.recurrenceType === "none"
         ? undefined
-        : computeStreak(
-            completions.get(String(todo._id)) ?? [],
-            todo.recurrenceType,
-            opts.timeZone,
-            now,
-          ),
+        : habitExtras(todo, completions.get(String(todo._id)) ?? [], opts.timeZone, now),
     ),
   );
 };
@@ -242,6 +263,8 @@ export interface CreateTodoInput extends TaskFieldsInput {
   durationGoal?: number;
   /** One-time tasks only; ignored for recurring ones. */
   dueDate?: string;
+  /** Daily habits only: days a week to aim for (1-6), or null for every day. */
+  perWeek?: number | null;
 }
 
 const isDay = (value: string | null | undefined): boolean =>
@@ -379,6 +402,7 @@ export const createTodo = async (
     ...(input.recurrenceType && input.recurrenceType !== "none"
       ? {}
       : { dueDate: input.dueDate }),
+    perWeek: recurrenceType === "daily" ? (input.perWeek ?? null) : null,
   });
   assertValidMode(todo);
   await applyTaskFields(todo, input, userId, timeZone);
@@ -422,6 +446,9 @@ export const updateTodo = async (
   ) {
     todo.recurrenceType = input.recurrenceType;
   }
+
+  if (input.perWeek !== undefined) todo.perWeek = input.perWeek;
+  if (todo.recurrenceType !== "daily") todo.perWeek = null;
 
   if (input.dueDate !== undefined) todo.dueDate = input.dueDate ?? undefined;
   // Recurring tasks are due every cycle; a fixed date would only mislead.
@@ -472,6 +499,9 @@ export const toggleTodo = async (
   } else {
     todo.completed = true;
     todo.lastCompletedAt = now;
+    // Done after all: the cycle is no longer a rest day.
+    const current = cycleKey(now, todo.recurrenceType, timeZone);
+    if (todo.skips?.includes(current)) todo.skips = todo.skips.filter((day) => day !== current);
 
     if (todo.interactionType === "timer") {
       todo.timerElapsedMs = 0;
@@ -606,14 +636,28 @@ export const convertTodo = async (
 /** Done tasks, newest first, `limit` at a time before `before`; plus done projects in the same window. */
 export const listLogbook = async (
   userId: string,
-  opts: { before?: Date; limit: number; timeZone: string },
+  opts: { before?: Date; limit: number; timeZone: string; projectId?: string; areaId?: string },
 ) => {
   const window = opts.before ? { $lt: opts.before } : { $ne: null };
+  // Optionally only one project's done tasks, or one area's (its own and its projects').
+  let scope: Record<string, unknown> = {};
+  if (opts.projectId) {
+    if (!Types.ObjectId.isValid(opts.projectId)) throw new BadRequestError("projectId is not a valid id");
+    scope = { projectId: new Types.ObjectId(opts.projectId) };
+  } else if (opts.areaId) {
+    if (!Types.ObjectId.isValid(opts.areaId)) throw new BadRequestError("areaId is not a valid id");
+    const areaId = new Types.ObjectId(opts.areaId);
+    const inArea = await TodoProject.find({ userId, areaId }, { _id: 1 }).lean();
+    scope = { $or: [{ areaId }, { projectId: { $in: inArea.map((project) => project._id) } }] };
+  }
+  const listScoped = Boolean(opts.projectId || opts.areaId);
   const [tasks, projects] = await Promise.all([
-    Todo.find({ userId, recurrenceType: "none", completedAt: window })
+    Todo.find({ userId, recurrenceType: "none", completedAt: window, ...scope })
       .sort({ completedAt: -1 })
       .limit(opts.limit),
-    TodoProject.find({ userId, completedAt: window }).sort({ completedAt: -1 }).limit(opts.limit).lean(),
+    listScoped
+      ? Promise.resolve([])
+      : TodoProject.find({ userId, completedAt: window }).sort({ completedAt: -1 }).limit(opts.limit).lean(),
   ]);
   const now = new Date();
   return {
@@ -635,6 +679,32 @@ export const reorderTodos = async (userId: string, ids: string[]): Promise<void>
       updateOne: { filter: { _id: id, userId }, update: { $set: { order: index } } },
     })),
   );
+};
+
+/**
+ * Skips a habit's current cycle (a rest day), or takes the skip back. A
+ * skipped cycle reads as neither done nor missed. Completing it later drops
+ * the skip.
+ */
+export const toggleSkip = async (
+  id: string,
+  userId: string,
+  timeZone: string,
+): Promise<TodoView> => {
+  const todo = await findOwned(id, userId);
+  const now = new Date();
+  if (todo.recurrenceType === "none") throw new BadRequestError("Only habits can be skipped");
+  if (isCurrentlyComplete(todo, timeZone, now)) {
+    throw new BadRequestError("This habit is already done for now");
+  }
+  const key = cycleKey(now, todo.recurrenceType, timeZone);
+  const skips = todo.skips ?? [];
+  todo.skips = skips.includes(key)
+    ? skips.filter((day) => day !== key)
+    : [...skips, key].sort().slice(-MAX_SKIPS);
+  if (todo.timerStartedAt) stopTimer(todo, timeZone, now);
+  await todo.save();
+  return viewOf(todo, timeZone, now);
 };
 
 export const TIMER_ACTIONS = ["start", "pause", "reset"] as const;
@@ -686,6 +756,8 @@ export const updateTimer = async (
 
 export interface TodoHistoryView {
   streak: Streak;
+  /** Skipped cycles, by their first day. */
+  skips: string[];
   /** Completions ever recorded. */
   total: number;
   /** Completions per local calendar day within the window, oldest first. */
@@ -719,7 +791,8 @@ export const getTodoHistory = async (
   }
 
   return {
-    streak: computeStreak(dates, todo.recurrenceType, timeZone, now),
+    streak: computeStreak(dates, todo.recurrenceType, timeZone, now, todo.skips ?? []),
+    skips: todo.skips ?? [],
     total: dates.length,
     days: [...counts].map(([date, count]) => ({ date, count })),
   };

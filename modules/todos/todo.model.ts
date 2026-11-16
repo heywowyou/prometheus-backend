@@ -45,6 +45,13 @@ export interface ITodo extends UserItemBase {
   order?: number;
   paused: boolean;
   pausedAt?: Date;
+  /**
+   * Habits only: cycles skipped on purpose (rest days), by the cycle's first
+   * day `YYYY-MM-DD`. A skipped cycle doesn't count as missed.
+   */
+  skips: string[];
+  /** Daily habits only: aim for this many days a week (1-6); null = every day. */
+  perWeek?: number | null;
 
   /* ---- Tasks (recurrenceType "none"). Habits are the recurring ones. ---- */
 
@@ -110,6 +117,8 @@ const TodoSchema = new Schema<ITodo>(
     },
     paused: { type: Boolean, default: false },
     pausedAt: { type: Date, required: false },
+    skips: { type: [String], default: [] },
+    perWeek: { type: Number, min: 1, max: 6, default: null },
     notes: { type: String, default: "", maxlength: 200_000 },
     checklist: {
       type: [

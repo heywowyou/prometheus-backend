@@ -16,7 +16,7 @@ import { exportRoutes } from "./modules/export";
 import { workoutRoutes } from "./modules/workouts";
 import { profileRoutes } from "./modules/profile";
 import { pushRoutes, startReminderJob, stopReminderJob } from "./modules/push";
-import { calendarRoutes } from "./modules/calendar";
+import { calendarRoutes, migrateEventColors } from "./modules/calendar";
 
 export const createApp = () => {
   const app = express();
@@ -62,6 +62,8 @@ const start = async () => {
   const migrated = await migrateLegacyHoldTodos();
   if (migrated > 0) logger.info(`Migrated ${migrated} "hold" todos`);
   await migrateTodosToThings();
+  const recolored = await migrateEventColors();
+  if (recolored > 0) logger.info(`Moved ${recolored} events to the calm palette`);
 
   const server = createApp().listen(config.port, () => {
     logger.info(`Server listening on port ${config.port} (${config.env})`);

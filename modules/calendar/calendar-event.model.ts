@@ -1,8 +1,12 @@
 import { Schema, model, type Model } from "mongoose";
 import { REPEAT_UNITS, type RepeatUnit } from "../todos/repeat";
 
-export const EVENT_COLORS = ["sage", "blue", "amber", "red", "orange", "violet"] as const;
+/** Calm hues, plus red for what is genuinely urgent. */
+export const EVENT_COLORS = ["sage", "teal", "blue", "sky", "stone", "red"] as const;
 export type EventColor = (typeof EVENT_COLORS)[number];
+
+/** Retired warm and purple colors, and the calm color each became. */
+const LEGACY_COLORS: Record<string, EventColor> = { violet: "sky", amber: "stone", orange: "teal" };
 
 /** Minutes before the start a reminder fires; `null` for none. */
 export const REMIND_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 1440] as const;
@@ -78,3 +82,13 @@ CalendarEventSchema.index({ nextReminderAt: 1 });
 const CalendarEvent: Model<ICalendarEvent> = model<ICalendarEvent>("CalendarEvent", CalendarEventSchema);
 
 export default CalendarEvent;
+
+/** Moves events off the retired colors. Idempotent, so it runs on every boot. */
+export const migrateEventColors = async (): Promise<number> => {
+  let changed = 0;
+  for (const [from, to] of Object.entries(LEGACY_COLORS)) {
+    const result = await CalendarEvent.collection.updateMany({ color: from }, { $set: { color: to } });
+    changed += result.modifiedCount;
+  }
+  return changed;
+};
