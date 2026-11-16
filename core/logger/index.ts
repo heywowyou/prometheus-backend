@@ -13,7 +13,14 @@ const minLevel: Level =
 
 const enabled = (level: Level) => LEVEL_ORDER[level] >= LEVEL_ORDER[minLevel];
 
+/** Set by the error reporter so logged errors also reach Sentry (avoids an import cycle). */
+let onError: ((message: string, meta?: unknown) => void) | null = null;
+export const setErrorSink = (sink: typeof onError) => {
+  onError = sink;
+};
+
 const emit = (level: Level, message: string, meta?: unknown) => {
+  if (level === "error") onError?.(message, meta);
   if (!enabled(level)) return;
   const line = `[${new Date().toISOString()}] ${level.toUpperCase()} ${message}`;
   const sink = level === "error" ? console.error : level === "warn" ? console.warn : console.log;

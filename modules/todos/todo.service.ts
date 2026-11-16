@@ -585,6 +585,47 @@ const toggleTask = async (todo: TodoDoc, timeZone: string, now: Date): Promise<T
   return viewOf(todo, timeZone, now);
 };
 
+/**
+ * Gives every completion a habit recorded (in its history) a done copy in the
+ * Completed list, the way a repeating task's completions get one. Used when a
+ * habit becomes a repeating task, so ticks from its habit days stay visible.
+ * Idempotent: a completion that already has a copy (same instant) is skipped.
+ * Returns the number of copies made.
+ */
+export const copyHabitHistoryToCompleted = async (
+  todo: TodoDoc,
+  timeZone: string,
+): Promise<number> => {
+  const history = await TodoHistory.find({ todoId: todo._id, userId: todo.userId }, { completedAt: 1 }).lean();
+  if (history.length === 0) return 0;
+  const existing = await Todo.find(
+    { userId: todo.userId, repeatOf: todo._id, completedAt: { $ne: null } },
+    { completedAt: 1 },
+  ).lean();
+  const seen = new Set(existing.map((copy) => copy.completedAt?.getTime()));
+  const copies = history
+    .filter((entry) => !seen.has(entry.completedAt.getTime()))
+    .map((entry) => ({
+      text: todo.text,
+      userId: todo.userId,
+      recurrenceType: "none" as const,
+      interactionType: "checkbox" as const,
+      durationGoal: todo.durationGoal,
+      notes: todo.notes ?? "",
+      areaId: todo.areaId ?? null,
+      projectId: todo.projectId ?? null,
+      tags: todo.tags ?? [],
+      completed: true,
+      completedAt: entry.completedAt,
+      lastCompletedAt: entry.completedAt,
+      when: localDateKey(entry.completedAt, timeZone),
+      repeat: null,
+      repeatOf: todo._id,
+    }));
+  if (copies.length > 0) await Todo.insertMany(copies);
+  return copies.length;
+};
+
 const HABIT_TO_UNIT = { daily: "day", weekly: "week", monthly: "month" } as const;
 const UNIT_TO_HABIT = { day: "daily", week: "weekly", month: "monthly", year: "monthly" } as const;
 
@@ -611,6 +652,7 @@ export const convertTodo = async (
     };
     const doneThisCycle = isCurrentlyComplete(todo, timeZone, now);
     if (todo.timerStartedAt) stopTimer(todo, timeZone, now);
+    await copyHabitHistoryToCompleted(todo, timeZone);
     todo.recurrenceType = "none";
     todo.repeat = rule;
     todo.when = doneThisCycle ? advanceRepeat(rule, today, today) : today;

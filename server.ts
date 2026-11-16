@@ -1,3 +1,10 @@
+import { initSentry, reportError, flushErrors } from "./core/observability";
+import { setErrorSink } from "./core/logger";
+
+// Before anything else, so errors during startup are reported too.
+initSentry();
+setErrorSink((message, meta) => reportError(meta instanceof Error ? meta : new Error(message), { message }));
+
 import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { clerkMiddleware } from "@clerk/express";
@@ -7,7 +14,12 @@ import logger from "./core/logger";
 import connectDB, { disconnectDB } from "./core/db";
 import { errorHandler, notFoundHandler } from "./core/http";
 
-import { todoRoutes, migrateLegacyHoldTodos, migrateTodosToThings } from "./modules/todos";
+import {
+  todoRoutes,
+  migrateLegacyHoldTodos,
+  migrateTodosToThings,
+  backfillHabitHistoryCopies,
+} from "./modules/todos";
 import { mediaLogRoutes } from "./modules/media";
 import { imageRoutes } from "./modules/images";
 import { noteRoutes } from "./modules/notes";
@@ -62,6 +74,7 @@ const start = async () => {
   const migrated = await migrateLegacyHoldTodos();
   if (migrated > 0) logger.info(`Migrated ${migrated} "hold" todos`);
   await migrateTodosToThings();
+  await backfillHabitHistoryCopies();
   const recolored = await migrateEventColors();
   if (recolored > 0) logger.info(`Moved ${recolored} events to the calm palette`);
 
@@ -74,7 +87,7 @@ const start = async () => {
     logger.info(`${signal} received, shutting down`);
     stopReminderJob();
     server.close(() => {
-      void disconnectDB().finally(() => process.exit(0));
+      void Promise.allSettled([disconnectDB(), flushErrors()]).finally(() => process.exit(0));
     });
   };
 
@@ -84,8 +97,9 @@ const start = async () => {
 
 // Guarded so the app can be imported by a test or script without listening.
 if (require.main === module) {
-  start().catch((error) => {
+  start().catch(async (error) => {
     logger.error("Failed to start server", error);
+    await flushErrors();
     process.exit(1);
   });
 }

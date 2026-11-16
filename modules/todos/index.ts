@@ -5,4 +5,4 @@ export { migrateLegacyHoldTodos } from "./todo.model";
 export type { ITodo, InteractionType } from "./todo.model";
 export type { TodoView, TodoHistoryView } from "./todo.service";
 export type { Streak } from "../../core/domain";
-export { migrateTodosToThings } from "./todo.migrations";
+export { migrateTodosToThings, backfillHabitHistoryCopies } from "./todo.migrations";

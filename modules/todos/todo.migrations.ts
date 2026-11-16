@@ -3,6 +3,7 @@ import Todo from "./todo.model";
 import { advanceRepeat } from "./repeat";
 import { localDateKey } from "../../core/domain";
 import { logger } from "../../core/logger";
+import { copyHabitHistoryToCompleted } from "./todo.service";
 
 const MIGRATION_ID = "todos-things-v1";
 const BACKUP_COLLECTION = "todos_backup_2026_11_16";
@@ -59,4 +60,27 @@ export const migrateTodosToThings = async (): Promise<void> => {
 
   await markers.insertOne({ _id: MIGRATION_ID, at: now });
   logger.info(`Todos migrated to the Things model (${monthly.length} monthly habits now repeat as tasks)`);
+};
+
+const HISTORY_COPIES_ID = "habit-history-to-completed-v1";
+
+/**
+ * One-off: habits turned into repeating tasks before conversions copied their
+ * history (the Things migration, and "Turn into a repeating task" until Nov
+ * 16, 2026) get a Completed entry for each past tick. Marker-guarded, so
+ * copies deleted later aren't recreated.
+ */
+export const backfillHabitHistoryCopies = async (): Promise<void> => {
+  const db = mongoose.connection.db;
+  if (!db) return;
+  const markers = db.collection<{ _id: string; at: Date }>("migrations");
+  if (await markers.findOne({ _id: HISTORY_COPIES_ID })) return;
+
+  const repeating = await Todo.find({ recurrenceType: "none", repeat: { $ne: null }, repeatOf: null });
+  let made = 0;
+  for (const todo of repeating) {
+    made += await copyHabitHistoryToCompleted(todo, MIGRATION_TIME_ZONE);
+  }
+  await markers.insertOne({ _id: HISTORY_COPIES_ID, at: new Date() });
+  logger.info(`Copied ${made} past habit ticks into Completed`);
 };
