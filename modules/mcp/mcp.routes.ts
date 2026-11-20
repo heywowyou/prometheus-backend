@@ -81,14 +81,16 @@ router.post(resourcePath, requireMcpUser, async (req, res) => {
   }
 });
 
-// No server-initiated streams or sessions in stateless mode.
+// No server-initiated streams or sessions in stateless mode. Auth runs first,
+// so an unauthenticated GET gets the same OAuth challenge as a POST (what
+// discovery checkers such as Clerk's probe), and only a signed-in one gets 405.
 const methodNotAllowed: RequestHandler = (_req, res) => {
   res
     .status(405)
     .set("Allow", "POST")
     .json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed" }, id: null });
 };
-router.get(resourcePath, methodNotAllowed);
-router.delete(resourcePath, methodNotAllowed);
+router.get(resourcePath, requireMcpUser, methodNotAllowed);
+router.delete(resourcePath, requireMcpUser, methodNotAllowed);
 
 export default router;

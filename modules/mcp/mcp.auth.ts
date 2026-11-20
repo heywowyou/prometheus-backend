@@ -39,19 +39,22 @@ export const resourceMetadataUrl = (): string => {
   return `${url.origin}/.well-known/oauth-protected-resource${path}`;
 };
 
+/** Scopes Claude should ask Clerk for: the user's identity, nothing more. */
+export const MCP_SCOPES = ["profile", "email"] as const;
+
 export const protectedResourceMetadata = () => {
   const authServer = clerkFrontendApiUrl();
   return {
     resource: config.mcp.resourceUrl,
     authorization_servers: authServer ? [authServer] : [],
-    scopes_supported: ["profile", "email"],
+    scopes_supported: [...MCP_SCOPES],
     bearer_methods_supported: ["header"],
     resource_name: "Prometheus",
   };
 };
 
 const challenge = (res: Parameters<RequestHandler>[1], error?: string) => {
-  const parts = [`resource_metadata="${resourceMetadataUrl()}"`];
+  const parts = [`resource_metadata="${resourceMetadataUrl()}"`, `scope="${MCP_SCOPES.join(" ")}"`];
   if (error) parts.push(`error="${error}"`);
   res
     .status(401)
