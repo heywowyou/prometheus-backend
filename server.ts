@@ -29,14 +29,19 @@ import { workoutRoutes } from "./modules/workouts";
 import { profileRoutes } from "./modules/profile";
 import { pushRoutes, startReminderJob, stopReminderJob } from "./modules/push";
 import { calendarRoutes, migrateEventColors } from "./modules/calendar";
+import { mcpRoutes } from "./modules/mcp";
 
 export const createApp = () => {
   const app = express();
 
-  app.use(cors({ origin: config.corsOrigins, credentials: true }));
   // Note bodies are Tiptap HTML and outgrow the 100 KB default.
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+  // The MCP endpoint and its OAuth discovery documents: before the app's CORS
+  // and session middleware, since Claude authenticates with OAuth access
+  // tokens that /mcp verifies itself.
+  app.use(mcpRoutes);
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
   app.use(clerkMiddleware());
 
   // Kept at both paths: /health for probes, / for anything still pinging the

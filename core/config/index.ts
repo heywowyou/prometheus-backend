@@ -64,6 +64,31 @@ export const config = {
     /** Contact for push services: a mailto: or https: URL. */
     subject: optional("VAPID_SUBJECT", "https://prometheus-production-848d.up.railway.app"),
   },
+  /** The MCP server Claude connects to (`/mcp`). */
+  mcp: {
+    /**
+     * The public URL of the MCP endpoint. OAuth tokens must name it as their
+     * audience. Defaults to the Railway domain, or localhost in development.
+     */
+    resourceUrl: optional(
+      "MCP_RESOURCE_URL",
+      process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/mcp`
+        : `http://localhost:${optional("PORT", "3000")}/mcp`,
+    ).replace(/\/+$/, ""),
+    /**
+     * Clerk user ids or email addresses allowed to use the MCP server,
+     * comma-separated. Empty: nobody (the endpoint answers 403).
+     */
+    allowedUsers: optional("MCP_ALLOWED_USERS", "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+    /** Names Clerk's OAuth server (its Frontend API) in the discovery metadata. */
+    clerkPublishableKey: optional("CLERK_PUBLISHABLE_KEY", ""),
+    /** The zone "today", habit cycles and event times use for Claude's requests. */
+    timeZone: optional("MCP_TIMEZONE", optional("APP_TIMEZONE", "UTC")),
+  },
 } as const;
 
 export const isProduction = config.env === "production";
@@ -74,6 +99,10 @@ if (!Number.isFinite(config.port) || config.port <= 0) {
 
 if (!isValidTimeZone(config.timeZone)) {
   throw new Error(`APP_TIMEZONE is not a valid IANA time zone: "${config.timeZone}"`);
+}
+
+if (!isValidTimeZone(config.mcp.timeZone)) {
+  throw new Error(`MCP_TIMEZONE is not a valid IANA time zone: "${config.mcp.timeZone}"`);
 }
 
 export default config;
